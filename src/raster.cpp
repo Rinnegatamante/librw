@@ -500,6 +500,14 @@ Raster::convertTexToCurrentPlatform(rw::Raster *ras)
 	   ras->platform == PLATFORM_D3D9 && rw::platform == PLATFORM_D3D8)
 		return ras;
 
+#ifdef PSP2
+	Image *img = ras->toImage();
+	ras->destroy();
+	img->unpalettize();
+	ras = Raster::createFromImage(img);
+	img->destroy();
+	return ras;
+#else
 	// special cased conversion for DXT
 	if((ras->platform == PLATFORM_D3D8 || ras->platform == PLATFORM_D3D9) && rw::platform == PLATFORM_GL3){
 		Raster *newras = d3d_to_gl3(ras);
@@ -545,6 +553,7 @@ Raster::convertTexToCurrentPlatform(rw::Raster *ras)
 	ras->destroy();
 	ras = newras;
 	return ras;
+#endif
 }
 
 
