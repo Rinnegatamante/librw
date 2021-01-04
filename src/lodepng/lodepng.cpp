@@ -113,7 +113,7 @@ void lodepng_free(void* ptr);
 #define LODEPNG_RESTRICT /* not available */
 #endif
 
-/* Replacements for C library functions such as memcpy and strlen, to support platforms
+/* Replacements for C library functions such as memcpy_neon and strlen, to support platforms
 where a full C library is not available. The compiler can recognize them and compile
 to something as fast. */
 

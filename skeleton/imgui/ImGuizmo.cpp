@@ -194,7 +194,7 @@ namespace ImGuizmo
          vec_t component[4];
       };
 
-      matrix_t(const matrix_t& other) { memcpy(&m16[0], &other.m16[0], sizeof(float) * 16); }
+      matrix_t(const matrix_t& other) { memcpy_neon(&m16[0], &other.m16[0], sizeof(float) * 16); }
       matrix_t() {}
 
       operator float * () { return m16; }
@@ -1478,7 +1478,7 @@ namespace ImGuizmo
          matrix_t deltaMatrixTranslation;
          deltaMatrixTranslation.Translation(delta);
          if (deltaMatrix)
-            memcpy(deltaMatrix, deltaMatrixTranslation.m16, sizeof(float) * 16);
+            memcpy_neon(deltaMatrix, deltaMatrixTranslation.m16, sizeof(float) * 16);
 
 
          matrix_t res = gContext.mModelSource * deltaMatrixTranslation;
@@ -1586,7 +1586,7 @@ namespace ImGuizmo
          if (deltaMatrix)
          {
             deltaMatrixScale.Scale(gContext.mScale);
-            memcpy(deltaMatrix, deltaMatrixScale.m16, sizeof(float) * 16);
+            memcpy_neon(deltaMatrix, deltaMatrixScale.m16, sizeof(float) * 16);
          }
 
          if (!io.MouseDown[0])

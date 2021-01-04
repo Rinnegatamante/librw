@@ -1054,7 +1054,7 @@ TODO:
 [ ] let the C++ wrapper catch exceptions coming from the standard library and return LodePNG error codes
 [ ] allow user to provide custom color conversion functions, e.g. for premultiplied alpha, padding bits or not, ...
 [ ] allow user to give data (void*) to custom allocator
-[X] provide alternatives for C library functions not present on some platforms (memcpy, ...)
+[X] provide alternatives for C library functions not present on some platforms (memcpy_neon, ...)
 */
 
 #endif /*LODEPNG_H inclusion guard*/

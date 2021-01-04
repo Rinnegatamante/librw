@@ -1,9 +1,14 @@
 #ifdef RW_GL3
+#ifdef PSP2
+#include <vitasdk.h>
+#include <vitaGL.h>
+#else
 #include <GL/glew.h>
 #ifdef LIBRW_SDL2
 #include <SDL.h>
 #else
 #include <GLFW/glfw3.h>
+#endif
 #endif
 #endif
 
@@ -15,7 +20,7 @@ struct EngineOpenParams
 #ifdef LIBRW_SDL2
 	SDL_Window **window;
 	bool32 fullscreen;
-#else
+#elif !defined(PSP2)
 	GLFWwindow **window;
 #endif
 	int width, height;
@@ -45,8 +50,6 @@ enum AttribIndices
 	ATTRIB_POS = 0,
 	ATTRIB_NORMAL,
 	ATTRIB_COLOR,
-	ATTRIB_WEIGHTS,
-	ATTRIB_INDICES,
 	ATTRIB_TEXCOORDS0,
 	ATTRIB_TEXCOORDS1,
 	ATTRIB_TEXCOORDS2,
@@ -55,6 +58,8 @@ enum AttribIndices
 	ATTRIB_TEXCOORDS5,
 	ATTRIB_TEXCOORDS6,
 	ATTRIB_TEXCOORDS7,
+	ATTRIB_WEIGHTS,
+	ATTRIB_INDICES
 };
 
 // default uniform indices

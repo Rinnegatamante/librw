@@ -2,7 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-
+#include <vitashark.h>
+extern "C"{
+#include <math_neon.h>
+};
 #include "../rwbase.h"
 #include "../rwerror.h"
 #include "../rwplg.h"
@@ -11,49 +14,60 @@
 #include "../rwpipeline.h"
 #include "../rwobjects.h"
 #ifdef RW_OPENGL
-#include <GL/glew.h>
-#ifdef LIBRW_SDL2
-#include <SDL.h>
-#else
-#include <GLFW/glfw3.h>
-#endif
+// #include <GL/glew.h>
+// #ifdef LIBRW_SDL2
+// #include <SDL.h>
+// #else
+// #include <GLFW/glfw3.h>
+// #endif
 #include "rwgl3.h"
 #include "rwgl3shader.h"
 #include "rwgl3impl.h"
 
+#include "psp2_shaders.h"
+
 #define PLUGIN_ID 0
+
+uint16_t *gIndicesIm2DPtr[2];
+uint16_t *gIndicesIm3DPtr[2];
+float *gVertexBufferIm2DPtr[2];
+float *gVertexBufferIm3DPtr[2];
+
+uint16_t *gConstIndices;
+float *gVertexBufferIm2D;
+float *gVertexBufferIm3D;
+uint16_t *gIndicesIm2D;
+uint16_t *gIndicesIm3D;
+uint8_t ImIdx = 0;
 
 namespace rw {
 namespace gl3 {
+#ifndef LIBRW_SDL2
 struct DisplayMode
 {
-#ifdef LIBRW_SDL2
-	SDL_DisplayMode mode;
-#else
-	GLFWvidmode mode;
-#endif
+	// GLFWvidmode mode;
 	int32 depth;
 	uint32 flags;
 };
+#endif
 
 struct GlGlobals
 {
 #ifdef LIBRW_SDL2
-	SDL_Window **pWindow;
 	SDL_Window *window;
 	SDL_GLContext glcontext;
 #else
-	GLFWwindow **pWindow;
-	GLFWwindow *window;
+	// GLFWwindow *window;
 
-	GLFWmonitor *monitor;
+	// GLFWmonitor *monitor;
 	int numMonitors;
 	int currentMonitor;
-#endif
 
 	DisplayMode *modes;
 	int numModes;
 	int currentMode;
+	// GLFWwindow **pWindow;
+#endif
 	int presentWidth, presentHeight;
 	int presentOffX, presentOffY;
 
@@ -113,39 +127,6 @@ struct GLShaderState
 	SurfaceProperties surfProps;
 };
 
-const char *shaderDecl120 =
-"#version 120\n"
-"#define GL2\n"
-"#define texture texture2D\n"
-"#define VSIN(index) attribute\n"
-"#define VSOUT varying\n"
-"#define FSIN varying\n"
-"#define FRAGCOLOR(c) (gl_FragColor = c)\n";
-const char *shaderDecl330 =
-"#version 330\n"
-"#define VSIN(index) layout(location = index) in\n"
-"#define VSOUT out\n"
-"#define FSIN in\n"
-"#define FRAGCOLOR(c) (fragColor = c)\n";
-const char *shaderDecl100es =
-"#version 100\n"
-"#define GL2\n"
-"#define texture texture2D\n"
-"#define VSIN(index) attribute\n"
-"#define VSOUT varying\n"
-"#define FSIN varying\n"
-"#define FRAGCOLOR(c) (gl_FragColor = c)\n"
-"precision highp float;\n"
-"precision highp int;\n";
-const char *shaderDecl310es =
-"#version 310 es\n"
-"#define VSIN(index) layout(location = index) in\n"
-"#define VSOUT out\n"
-"#define FSIN in\n"
-"#define FRAGCOLOR(c) (fragColor = c)\n"
-"precision highp float;\n"
-"precision highp int;\n";
-
 const char *shaderDecl;
 
 // this needs a define in the shaders as well!
@@ -172,8 +153,7 @@ int32 u_fogData;
 int32 u_fogColor;
 
 // Scene
-int32 u_proj;
-int32 u_view;
+int32 u_wvp;
 
 // Object
 int32 u_world;
@@ -189,9 +169,9 @@ int32 u_surfProps;
 
 Shader *defaultShader;
 
-static bool32 stateDirty = 1;
-static bool32 sceneDirty = 1;
-static bool32 objectDirty = 1;
+//static bool32 stateDirty = 1;
+//static bool32 sceneDirty = 1;
+//static bool32 objectDirty = 1;
 
 struct RwRasterStateCache {
 	Raster *raster;
@@ -263,7 +243,7 @@ enum
 
 	RWGL_NUM_STATES
 };
-static bool uniformStateDirty[RWGL_NUM_STATES];
+//static bool uniformStateDirty[RWGL_NUM_STATES];
 
 struct GlState {
 	bool32 blendEnable;
@@ -367,64 +347,64 @@ setGlRenderState(uint32 state, uint32 value)
 void
 flushGlRenderState(void)
 {
-	if(oldGlState.blendEnable != curGlState.blendEnable){
+	//if(oldGlState.blendEnable != curGlState.blendEnable){
 		oldGlState.blendEnable = curGlState.blendEnable;
 		(oldGlState.blendEnable ? glEnable : glDisable)(GL_BLEND);
-	}
+	//}
 
-	if(oldGlState.srcblend != curGlState.srcblend ||
-	   oldGlState.destblend != curGlState.destblend){
+	//if(oldGlState.srcblend != curGlState.srcblend ||
+	//   oldGlState.destblend != curGlState.destblend){
 		oldGlState.srcblend = curGlState.srcblend;
 		oldGlState.destblend = curGlState.destblend;
 		glBlendFunc(oldGlState.srcblend, oldGlState.destblend);
-	}
+	//}
 
-	if(oldGlState.depthTest != curGlState.depthTest){
+	//if(oldGlState.depthTest != curGlState.depthTest){
 		oldGlState.depthTest = curGlState.depthTest;
 		(oldGlState.depthTest ? glEnable : glDisable)(GL_DEPTH_TEST);
-	}
-	if(oldGlState.depthFunc != curGlState.depthFunc){
+	//}
+	//if(oldGlState.depthFunc != curGlState.depthFunc){
 		oldGlState.depthFunc = curGlState.depthFunc;
 		glDepthFunc(oldGlState.depthFunc);
-	}
-	if(oldGlState.depthMask != curGlState.depthMask){
+	//}
+	//if(oldGlState.depthMask != curGlState.depthMask){
 		oldGlState.depthMask = curGlState.depthMask;
 		glDepthMask(oldGlState.depthMask);
-	}
+	//}
 
-	if(oldGlState.stencilEnable != curGlState.stencilEnable){
+	//if(oldGlState.stencilEnable != curGlState.stencilEnable){
 		oldGlState.stencilEnable = curGlState.stencilEnable;
 		(oldGlState.stencilEnable ? glEnable : glDisable)(GL_STENCIL_TEST);
-	}
-	if(oldGlState.stencilFunc != curGlState.stencilFunc ||
-	   oldGlState.stencilRef != curGlState.stencilRef ||
-	   oldGlState.stencilMask != curGlState.stencilMask){
+	//}
+	//if(oldGlState.stencilFunc != curGlState.stencilFunc ||
+	//   oldGlState.stencilRef != curGlState.stencilRef ||
+	//   oldGlState.stencilMask != curGlState.stencilMask){
 		oldGlState.stencilFunc = curGlState.stencilFunc;
 		oldGlState.stencilRef = curGlState.stencilRef;
 		oldGlState.stencilMask = curGlState.stencilMask;
 		glStencilFunc(oldGlState.stencilFunc, oldGlState.stencilRef, oldGlState.stencilMask);
-	}
-	if(oldGlState.stencilPass != curGlState.stencilPass ||
-	   oldGlState.stencilFail != curGlState.stencilFail ||
-	   oldGlState.stencilZFail != curGlState.stencilZFail){
+	//}
+	//if(oldGlState.stencilPass != curGlState.stencilPass ||
+	//   oldGlState.stencilFail != curGlState.stencilFail ||
+	//   oldGlState.stencilZFail != curGlState.stencilZFail){
 		oldGlState.stencilPass = curGlState.stencilPass;
 		oldGlState.stencilFail = curGlState.stencilFail;
 		oldGlState.stencilZFail = curGlState.stencilZFail;
 		glStencilOp(oldGlState.stencilFail, oldGlState.stencilZFail, oldGlState.stencilPass);
-	}
-	if(oldGlState.stencilWriteMask != curGlState.stencilWriteMask){
+	//}
+	//if(oldGlState.stencilWriteMask != curGlState.stencilWriteMask){
 		oldGlState.stencilWriteMask = curGlState.stencilWriteMask;
 		glStencilMask(oldGlState.stencilWriteMask);
-	}
+	//}
 
-	if(oldGlState.cullEnable != curGlState.cullEnable){
+	//if(oldGlState.cullEnable != curGlState.cullEnable){
 		oldGlState.cullEnable = curGlState.cullEnable;
 		(oldGlState.cullEnable ? glEnable : glDisable)(GL_CULL_FACE);
-	}
-	if(oldGlState.cullFace != curGlState.cullFace){
+	//}
+	//if(oldGlState.cullFace != curGlState.cullFace){
 		oldGlState.cullFace = curGlState.cullFace;
 		glCullFace(oldGlState.cullFace);
-	}
+	//}
 }
 
 
@@ -432,10 +412,10 @@ flushGlRenderState(void)
 void
 setAlphaBlend(bool32 enable)
 {
-	if(rwStateCache.blendEnable != enable){
+	//if(rwStateCache.blendEnable != enable){
 		rwStateCache.blendEnable = enable;
 		setGlRenderState(RWGL_BLEND, enable);
-	}
+	//}
 }
 
 bool32
@@ -484,8 +464,8 @@ setAlphaTest(bool32 enable)
 		shaderfunc = rwStateCache.alphaTestEnable ? rwStateCache.alphaFunc : ALPHAALWAYS;
 		if(alphaFunc != shaderfunc){
 			alphaFunc = shaderfunc;
-			uniformStateDirty[RWGL_ALPHAFUNC] = true;
-			stateDirty = 1;
+//			uniformStateDirty[RWGL_ALPHAFUNC] = true;
+//			stateDirty = 1;
 		}
 	}
 }
@@ -499,8 +479,8 @@ setAlphaTestFunction(uint32 function)
 		shaderfunc = rwStateCache.alphaTestEnable ? rwStateCache.alphaFunc : ALPHAALWAYS;
 		if(alphaFunc != shaderfunc){
 			alphaFunc = shaderfunc;
-			uniformStateDirty[RWGL_ALPHAFUNC] = true;
-			stateDirty = 1;
+//			uniformStateDirty[RWGL_ALPHAFUNC] = true;
+//			stateDirty = 1;
 		}
 	}
 }
@@ -557,7 +537,7 @@ static GLint filterConvMap_MIP[] = {
 
 static GLint addressConvMap[] = {
 	0, GL_REPEAT, GL_MIRRORED_REPEAT,
-	GL_CLAMP_TO_EDGE, GL_CLAMP_TO_BORDER
+	GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE
 };
 
 static void
@@ -759,8 +739,8 @@ setRenderState(int32 state, void *pvalue)
 	case FOGENABLE:
 		if(rwStateCache.fogEnable != value){
 			rwStateCache.fogEnable = value;
-			uniformStateDirty[RWGL_FOG] = true;
-			stateDirty = 1;
+//			uniformStateDirty[RWGL_FOG] = true;
+//			stateDirty = 1;
 		}
 		break;
 	case FOGCOLOR:
@@ -771,8 +751,8 @@ setRenderState(int32 state, void *pvalue)
 		c.blue = value>>16;
 		c.alpha = value>>24;
 		convColor(&uniformState.fogColor, &c);
-		uniformStateDirty[RWGL_FOGCOLOR] = true;
-		stateDirty = 1;
+//		uniformStateDirty[RWGL_FOGCOLOR] = true;
+//		stateDirty = 1;
 		break;
 	case CULLMODE:
 		if(rwStateCache.cullmode != value){
@@ -841,8 +821,8 @@ setRenderState(int32 state, void *pvalue)
 	case ALPHATESTREF:
 		if(alphaRef != value/255.0f){
 			alphaRef = value/255.0f;
-			uniformStateDirty[RWGL_ALPHAREF] = true;
-			stateDirty = 1;
+//			uniformStateDirty[RWGL_ALPHAREF] = true;
+//			stateDirty = 1;
 		}
 		break;
 	case GSALPHATEST:
@@ -959,7 +939,7 @@ resetRenderState(void)
 	uniformState.fogColor = { 1.0f, 1.0f, 1.0f, 1.0f };
 	rwStateCache.gsalpha = 0;
 	rwStateCache.gsalpharef = 128;
-	stateDirty = 1;
+//	stateDirty = 1;
 
 	rwStateCache.vertexAlpha = 0;
 	rwStateCache.textureAlpha = 0;
@@ -1014,7 +994,7 @@ void
 setWorldMatrix(Matrix *mat)
 {
 	convMatrix(&uniformObject.world, mat);
-	objectDirty = 1;
+//	objectDirty = 1;
 }
 
 int32
@@ -1036,7 +1016,7 @@ setLights(WorldLights *lightData)
 		l = lightData->directionals[i];
 		uniformObject.lightParams[n].type = 1.0f;
 		uniformObject.lightColor[n] = l->color;
-		memcpy(&uniformObject.lightDirection[n], &l->getFrame()->getLTM()->at, sizeof(V3d));
+		memcpy_neon(&uniformObject.lightDirection[n], &l->getFrame()->getLTM()->at, sizeof(V3d));
 		bits |= VSLIGHT_POINT;
 		n++;
 		if(n >= MAX_LIGHTS)
@@ -1051,7 +1031,7 @@ setLights(WorldLights *lightData)
 			uniformObject.lightParams[n].type = 2.0f;
 			uniformObject.lightParams[n].radius = l->radius;
 			uniformObject.lightColor[n] = l->color;
-			memcpy(&uniformObject.lightPosition[n], &l->getFrame()->getLTM()->pos, sizeof(V3d));
+			memcpy_neon(&uniformObject.lightPosition[n], &l->getFrame()->getLTM()->pos, sizeof(V3d));
 			bits |= VSLIGHT_POINT;
 			n++;
 			if(n >= MAX_LIGHTS)
@@ -1063,8 +1043,8 @@ setLights(WorldLights *lightData)
 			uniformObject.lightParams[n].minusCosAngle = l->minusCosAngle;
 			uniformObject.lightParams[n].radius = l->radius;
 			uniformObject.lightColor[n] = l->color;
-			memcpy(&uniformObject.lightPosition[n], &l->getFrame()->getLTM()->pos, sizeof(V3d));
-			memcpy(&uniformObject.lightDirection[n], &l->getFrame()->getLTM()->at, sizeof(V3d));
+			memcpy_neon(&uniformObject.lightPosition[n], &l->getFrame()->getLTM()->pos, sizeof(V3d));
+			memcpy_neon(&uniformObject.lightDirection[n], &l->getFrame()->getLTM()->at, sizeof(V3d));
 			// lower bound of falloff
 			if(l->getType() == Light::SOFTSPOT)
 				uniformObject.lightParams[n].hardSpot = 0.0f;
@@ -1080,51 +1060,59 @@ setLights(WorldLights *lightData)
 
 	uniformObject.lightParams[n].type = 0.0f;
 out:
-	objectDirty = 1;
+//	objectDirty = 1;
 	return bits;
 }
 
 void
 setProjectionMatrix(float32 *mat)
 {
-	memcpy(&uniformScene.proj, mat, 64);
-	sceneDirty = 1;
+	memcpy_neon(&uniformScene.proj, mat, 64);
+//	sceneDirty = 1;
 }
 
 void
 setViewMatrix(float32 *mat)
 {
-	memcpy(&uniformScene.view, mat, 64);
-	sceneDirty = 1;
+	memcpy_neon(&uniformScene.view, mat, 64);
+//	sceneDirty = 1;
 }
 
 Shader *lastShaderUploaded;
 
 #define U(i) currentShader->uniformLocations[i]
 
+rw::RGBAf matColorCache;
+float surfPropsCache[4];
+
 void
 setMaterial(const RGBA &color, const SurfaceProperties &surfaceprops)
 {
-	bool force = lastShaderUploaded != currentShader;
-	if(force || !equal(shaderState.matColor, color)){
-		rw::RGBAf col;
-		convColor(&col, &color);
-		glUniform4fv(U(u_matColor), 1, (GLfloat*)&col);
+	//bool force = lastShaderUploaded != currentShader;
+	//if(force || !equal(shaderState.matColor, color)){
+		convColor(&matColorCache, &color);
+		// rw::RGBAf col;
+		// convColor(&col, &color);
+		// glUniform4fv(U(u_matColor), 1, (GLfloat*)&col);
 		shaderState.matColor = color;
-	}
+	//}
 
-	if(force ||
-	   shaderState.surfProps.ambient != surfaceprops.ambient ||
-	   shaderState.surfProps.specular != surfaceprops.specular ||
-	   shaderState.surfProps.diffuse != surfaceprops.diffuse){
-		float surfProps[4];
-		surfProps[0] = surfaceprops.ambient;
-		surfProps[1] = surfaceprops.specular;
-		surfProps[2] = surfaceprops.diffuse;
-		surfProps[3] = 0.0f;
-		glUniform4fv(U(u_surfProps), 1, surfProps);
+	//if(force ||
+	//   shaderState.surfProps.ambient != surfaceprops.ambient ||
+	//   shaderState.surfProps.specular != surfaceprops.specular ||
+	//   shaderState.surfProps.diffuse != surfaceprops.diffuse){
+		surfPropsCache[0] = surfaceprops.ambient;
+		surfPropsCache[1] = surfaceprops.specular;
+		surfPropsCache[2] = surfaceprops.diffuse;
+		surfPropsCache[3] = 0.0f;
+		// float surfProps[4];
+		// surfProps[0] = surfaceprops.ambient;
+		// surfProps[1] = surfaceprops.specular;
+		// surfProps[2] = surfaceprops.diffuse;
+		// surfProps[3] = 0.0f;
+		// glUniform4fv(U(u_surfProps), 1, surfProps);
 		shaderState.surfProps = surfaceprops;
-	}
+	//}
 }
 
 void
@@ -1132,10 +1120,13 @@ flushCache(void)
 {
 	flushGlRenderState();
 
+	glUniform4fv(U(u_matColor), 1, &matColorCache.red);
+	glUniform4fv(U(u_surfProps), 1, surfPropsCache);
+
 #ifndef RW_GL_USE_UBOS
 
 	// TODO: this is probably a stupid way to do it without UBOs
-	if(lastShaderUploaded != currentShader){
+	/*if(lastShaderUploaded != currentShader){
 		lastShaderUploaded = currentShader;
 		objectDirty = 1;
 		sceneDirty = 1;
@@ -1144,23 +1135,29 @@ flushCache(void)
 		int i;
 		for(i = 0; i < RWGL_NUM_STATES; i++)
 			uniformStateDirty[i] = true;
-	}
+	}*/
 
-	if(sceneDirty){
-		glUniformMatrix4fv(U(u_proj), 1, 0, uniformScene.proj);
-		glUniformMatrix4fv(U(u_view), 1, 0, uniformScene.view);
-		sceneDirty = 0;
-	}
+	//if(sceneDirty){
+		//glUniformMatrix4fv(U(u_proj), 1, 0, uniformScene.proj);
+		//glUniformMatrix4fv(U(u_view), 1, 0, uniformScene.view);
+		//sceneDirty = 0;
+	//}
 
-	if(objectDirty){
+	//if(objectDirty){
 		glUniformMatrix4fv(U(u_world), 1, 0, (float*)&uniformObject.world);
+		
+		float wv[16], wvp[16];
+		matmul4_neon((float *)uniformScene.view, (float *)&uniformObject.world, (float *)wv);
+		matmul4_neon((float *)uniformScene.proj, (float *)wv, (float *)wvp);
+		glUniformMatrix4fv(U(u_wvp), 1, 0, (float*)wvp);
+		
 		glUniform4fv(U(u_ambLight), 1, (float*)&uniformObject.ambLight);
 		glUniform4fv(U(u_lightParams), MAX_LIGHTS, (float*)uniformObject.lightParams);
-		glUniform4fv(U(u_lightPosition), MAX_LIGHTS, (float*)uniformObject.lightPosition);
+		//glUniform4fv(U(u_lightPosition), MAX_LIGHTS, (float*)uniformObject.lightPosition);
 		glUniform4fv(U(u_lightDirection), MAX_LIGHTS, (float*)uniformObject.lightDirection);
 		glUniform4fv(U(u_lightColor), MAX_LIGHTS, (float*)uniformObject.lightColor);
-		objectDirty = 0;
-	}
+	//	objectDirty = 0;
+	//}
 
 //	if(stateDirty){
 
@@ -1169,7 +1166,7 @@ flushCache(void)
 		uniformState.fogEnd = rwStateCache.fogEnd;
 		uniformState.fogRange = 1.0f/(rwStateCache.fogStart - rwStateCache.fogEnd);
 
-		if(uniformStateDirty[RWGL_ALPHAFUNC] || uniformStateDirty[RWGL_ALPHAREF]){
+		//if(uniformStateDirty[RWGL_ALPHAFUNC] || uniformStateDirty[RWGL_ALPHAREF]){
 			switch(alphaFunc){
 			case ALPHAALWAYS:
 			default:
@@ -1182,13 +1179,13 @@ flushCache(void)
 				glUniform2f(U(u_alphaRef), -1000.0f, alphaRef);
 				break;
 			}
-			uniformStateDirty[RWGL_ALPHAFUNC] = false;
-			uniformStateDirty[RWGL_ALPHAREF] = false;
-		}
+			//uniformStateDirty[RWGL_ALPHAFUNC] = false;
+			//uniformStateDirty[RWGL_ALPHAREF] = false;
+		//}
 
-		if(uniformStateDirty[RWGL_FOG] ||
+		/*if(uniformStateDirty[RWGL_FOG] ||
 		   uniformStateDirty[RWGL_FOGSTART] ||
-		   uniformStateDirty[RWGL_FOGEND]){
+		   uniformStateDirty[RWGL_FOGEND]){*/
 			float fogData[4] = {
 				uniformState.fogStart,
 				uniformState.fogEnd,
@@ -1196,32 +1193,32 @@ flushCache(void)
 				uniformState.fogDisable
 			};
 			glUniform4fv(U(u_fogData), 1, fogData);
-			uniformStateDirty[RWGL_FOG] = false;
-			uniformStateDirty[RWGL_FOGSTART] = false;
-			uniformStateDirty[RWGL_FOGEND] = false;
-		}
+		//	uniformStateDirty[RWGL_FOG] = false;
+		//	uniformStateDirty[RWGL_FOGSTART] = false;
+		//	uniformStateDirty[RWGL_FOGEND] = false;
+		//}
 
-		if(uniformStateDirty[RWGL_FOGCOLOR]){
+		//if(uniformStateDirty[RWGL_FOGCOLOR]){
 			glUniform4fv(U(u_fogColor), 1, (float*)&uniformState.fogColor);
-			uniformStateDirty[RWGL_FOGCOLOR] = false;
-		}
+		//	uniformStateDirty[RWGL_FOGCOLOR] = false;
+		//}
 
 //		stateDirty = 0;
 //	}
 #else
-	if(objectDirty){
+	//if(objectDirty){
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo_object);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformObject), nil, GL_STREAM_DRAW);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformObject), &uniformObject, GL_STREAM_DRAW);
-		objectDirty = 0;
-	}
-	if(sceneDirty){
+	//	objectDirty = 0;
+	//}
+	//if(sceneDirty){
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo_scene);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformScene), nil, GL_STREAM_DRAW);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformScene), &uniformScene, GL_STREAM_DRAW);
-		sceneDirty = 0;
-	}
-	if(stateDirty){
+	//	sceneDirty = 0;
+	//}
+	//if(stateDirty){
 		switch(alphaFunc){
 		case ALPHAALWAYS:
 		default:
@@ -1244,8 +1241,8 @@ flushCache(void)
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo_state);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformState), nil, GL_STREAM_DRAW);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformState), &uniformState, GL_STREAM_DRAW);
-		stateDirty = 0;
-	}
+	//	stateDirty = 0;
+	//}
 #endif
 }
 
@@ -1262,7 +1259,7 @@ setFrameBuffer(Camera *cam)
 
 	// Have to make sure depth buffer is attached to FB's fbo
 	bindFramebuffer(natfb->fbo);
-	if(zbuf){
+	/*if(zbuf){
 		if(natfb->fboMate == zbuf){
 			// all good
 			assert(natzb->fboMate == fbuf);
@@ -1291,7 +1288,7 @@ setFrameBuffer(Camera *cam)
 		if(natfb->fboMate && natfb->fbo)
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
 		natfb->fboMate = nil;
-	}
+	}*/
 }
 
 static void
@@ -1319,7 +1316,7 @@ beginUpdate(Camera *cam)
 	view[13] =  inv.pos.y;
 	view[14] =  inv.pos.z;
 	view[15] =  1.0f;
-	memcpy(&cam->devView, &view, sizeof(RawMatrix));
+	memcpy_neon(&cam->devView, &view, sizeof(RawMatrix));
 	setViewMatrix(view);
 
 	// Projection Matrix
@@ -1354,22 +1351,30 @@ beginUpdate(Camera *cam)
 		proj[14] = 2.0f*invz;
 		proj[15] = 1.0f;
 	}
-	memcpy(&cam->devProj, &proj, sizeof(RawMatrix));
+	memcpy_neon(&cam->devProj, &proj, sizeof(RawMatrix));
 	setProjectionMatrix(proj);
 
 	if(rwStateCache.fogStart != cam->fogPlane){
 		rwStateCache.fogStart = cam->fogPlane;
-		uniformStateDirty[RWGL_FOGSTART] = true;
-		stateDirty = 1;
+//		uniformStateDirty[RWGL_FOGSTART] = true;
+//		stateDirty = 1;
 	}
 	if(rwStateCache.fogEnd != cam->farPlane){
 		rwStateCache.fogEnd = cam->farPlane;
-		uniformStateDirty[RWGL_FOGEND] = true;
-		stateDirty = 1;
+//		uniformStateDirty[RWGL_FOGEND] = true;
+//		stateDirty = 1;
 	}
 
 	setFrameBuffer(cam);
-
+#ifndef MIAMI_SUPPORT
+	vglStartRendering();
+#endif
+	ImIdx = (ImIdx + 1) % 2;
+	gVertexBufferIm2D = gVertexBufferIm2DPtr[ImIdx];
+	gVertexBufferIm3D = gVertexBufferIm3DPtr[ImIdx];
+	gIndicesIm2D = gIndicesIm2DPtr[ImIdx];
+	gIndicesIm3D = gIndicesIm3DPtr[ImIdx];
+	
 	int w, h;
 	int x, y;
 	Raster *fb = cam->frameBuffer->parent;
@@ -1377,7 +1382,9 @@ beginUpdate(Camera *cam)
 #ifdef LIBRW_SDL2
 		SDL_GetWindowSize(glGlobals.window, &w, &h);
 #else
-		glfwGetWindowSize(glGlobals.window, &w, &h);
+		w = 960;
+		h = 544;
+		// glfwGetWindowSize(glGlobals.window, &w, &h);
 #endif
 	}else{
 		w = fb->width;
@@ -1408,15 +1415,18 @@ beginUpdate(Camera *cam)
 static void
 endUpdate(Camera *cam)
 {
+#ifndef MIAMI_SUPPORT
+	vglStopRendering();
+#endif
 }
 
 static void
 clearCamera(Camera *cam, RGBA *col, uint32 mode)
 {
 	RGBAf colf;
-	GLbitfield mask;
+	int mask;
 
-	setFrameBuffer(cam);
+	// setFrameBuffer(cam);
 
 	convColor(&colf, col);
 	glClearColor(colf.red, colf.green, colf.blue, colf.alpha);
@@ -1428,7 +1438,7 @@ clearCamera(Camera *cam, RGBA *col, uint32 mode)
 	if(mode & Camera::CLEARSTENCIL)
 		mask |= GL_STENCIL_BUFFER_BIT;
 	glDepthMask(GL_TRUE);
-	glClear(mask);
+	glClear((GLbitfield)mask);
 	glDepthMask(rwStateCache.zwrite);
 }
 
@@ -1437,17 +1447,19 @@ showRaster(Raster *raster, uint32 flags)
 {
 	// TODO: do this properly!
 #ifdef LIBRW_SDL2
-	if(flags & Raster::FLIPWAITVSYNCH)
-		SDL_GL_SetSwapInterval(1);
-	else
-		SDL_GL_SetSwapInterval(0);
 	SDL_GL_SwapWindow(glGlobals.window);
 #else
 	if(flags & Raster::FLIPWAITVSYNCH)
-		glfwSwapInterval(1);
+		vglWaitVblankStart(GL_TRUE);
+		// glfwSwapInterval(1);
 	else
-		glfwSwapInterval(0);
-	glfwSwapBuffers(glGlobals.window);
+		vglWaitVblankStart(GL_FALSE);
+		// glfwSwapInterval(0);
+	// glfwSwapBuffers(glGlobals.window);
+#endif
+#ifdef MIAMI_SUPPORT
+	vglStopRendering();
+	vglStartRendering();
 #endif
 }
 
@@ -1467,8 +1479,20 @@ rasterRenderFast(Raster *raster, int32 x, int32 y)
 		case Raster::CAMERA:
 			setActiveTexture(0);
 			glBindTexture(GL_TEXTURE_2D, natdst->texid);
-			glCopyTexSubImage2D(GL_TEXTURE_2D, 0, x, (dst->height-src->height)-y,
-				0, 0, src->width, src->height);
+			SceDisplayFrameBuf pParam;
+			pParam.size = sizeof(SceDisplayFrameBuf);
+			sceDisplayGetFrameBuf(&pParam, SCE_DISPLAY_SETBUF_NEXTFRAME);
+			sceGxmTransferCopy(960, 544, 0, SCE_GXM_COLOR_MASK_A,
+				SCE_GXM_TRANSFER_COLORKEY_NONE,
+				SCE_GXM_TRANSFER_FORMAT_U8U8U8U8_ABGR,
+				SCE_GXM_TRANSFER_LINEAR,
+				pParam.base, 0, 0, 960 * 4,
+				SCE_GXM_TRANSFER_FORMAT_U8U8U8_BGR,
+				SCE_GXM_TRANSFER_LINEAR,
+				(uint8_t*)vglGetTexDataPointer(GL_TEXTURE_2D) + (dst->height - 1) * dst->stride, 0, 0, -dst->stride,
+				NULL, SCE_GXM_TRANSFER_FRAGMENT_SYNC, NULL);
+			// glCopyTexSubImage2D(GL_TEXTURE_2D, 0, x, (dst->height-src->height)-y,
+				// 0, 0, src->width, src->height);
 			glBindTexture(GL_TEXTURE_2D, boundTexture[0]);
 			return 1;
 		}
@@ -1478,172 +1502,78 @@ rasterRenderFast(Raster *raster, int32 x, int32 y)
 }
 
 #ifdef LIBRW_SDL2
-
-static void
-addVideoMode(int displayIndex, int modeIndex)
-{
-	int i;
-	SDL_DisplayMode mode;
-
-	SDL_GetDisplayMode(displayIndex, modeIndex, &mode);
-
-	for(i = 1; i < glGlobals.numModes; i++){
-		if(glGlobals.modes[i].mode.w == mode.w &&
-		   glGlobals.modes[i].mode.h == mode.h &&
-		   glGlobals.modes[i].mode.format == mode.format){
-			// had this mode already, remember highest refresh rate
-			if(mode.refresh_rate > glGlobals.modes[i].mode.refresh_rate)
-				glGlobals.modes[i].mode.refresh_rate = mode.refresh_rate;
-			return;
-		}
-	}
-
-	// none found, add
-	glGlobals.modes[glGlobals.numModes].mode = mode;
-	glGlobals.modes[glGlobals.numModes].flags = VIDEOMODEEXCLUSIVE;
-	glGlobals.numModes++;
-}
-
-static void
-makeVideoModeList(int displayIndex)
-{
-	int i, num, depth;
-
-	num = SDL_GetNumDisplayModes(displayIndex);
-	rwFree(glGlobals.modes);
-	glGlobals.modes = rwNewT(DisplayMode, num+1, ID_DRIVER | MEMDUR_EVENT);
-
-	SDL_GetCurrentDisplayMode(displayIndex, &glGlobals.modes[0].mode);
-	glGlobals.modes[0].flags = 0;
-	glGlobals.numModes = 1;
-
-	for(i = 0; i < num; i++)
-		addVideoMode(displayIndex, i);
-
-	for(i = 0; i < glGlobals.numModes; i++){
-		depth = SDL_BITSPERPIXEL(glGlobals.modes[i].mode.format);
-		// set depth to power of two
-		for(glGlobals.modes[i].depth = 1; glGlobals.modes[i].depth < depth; glGlobals.modes[i].depth <<= 1);
-	}
-}
-
 static int
 openSDL2(EngineOpenParams *openparams)
 {
-	glGlobals.winWidth = openparams->width;
-	glGlobals.winHeight = openparams->height;
-	glGlobals.winTitle = openparams->windowtitle;
-	glGlobals.pWindow = openparams->window;
-
-	memset(&gl3Caps, 0, sizeof(gl3Caps));
-
-	/* Init SDL */
-	if(SDL_InitSubSystem(SDL_INIT_VIDEO)){
-		RWERROR((ERR_GENERAL, SDL_GetError()));
+	if (!openparams){
+		RWERROR((ERR_GENERAL, "openparams invalid"));
 		return 0;
 	}
 
-	makeVideoModeList(0);
+	GLenum status;
+	SDL_Window *win;
+	SDL_GLContext ctx;
 
+	/* Init SDL */
+	if(SDL_InitSubSystem(SDL_INIT_VIDEO)){
+		RWERROR((ERR_ENGINEOPEN, SDL_GetError()));
+		return 0;
+	}
+	SDL_ClearHints();
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+
+	int flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
+	if (openparams->fullscreen)
+		flags |= SDL_WINDOW_FULLSCREEN;
+	win = SDL_CreateWindow(openparams->windowtitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, openparams->width, openparams->height, flags);
+	if(win == nil){
+		RWERROR((ERR_ENGINEOPEN, SDL_GetError()));
+		SDL_QuitSubSystem(SDL_INIT_VIDEO);
+		return 0;
+	}
+	ctx = SDL_GL_CreateContext(win);
+
+	/* Init GLEW */
+	glewExperimental = GL_TRUE;
+	status = glewInit();
+	if(status != GLEW_OK){
+        	RWERROR((ERR_ENGINEOPEN, glewGetErrorString(status)));
+        	SDL_GL_DeleteContext(ctx);
+        	SDL_DestroyWindow(win);
+        	SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        	return 0;
+	}
+	if(!GLEW_VERSION_3_3){
+		RWERROR((ERR_VERSION, "OpenGL 3.3 needed"));
+		SDL_GL_DeleteContext(ctx);
+		SDL_DestroyWindow(win);
+		SDL_QuitSubSystem(SDL_INIT_VIDEO);
+		return 0;
+	}
+	glGlobals.window = win;
+	glGlobals.glcontext = ctx;
+	*openparams->window = win;
 	return 1;
 }
 
 static int
 closeSDL2(void)
 {
-	SDL_QuitSubSystem(SDL_INIT_VIDEO);
-	return 1;
-}
-
-static struct {
-	int gl;
-	int major, minor;
-} profiles[] = {
-	{ SDL_GL_CONTEXT_PROFILE_CORE, 3, 3 },
-	{ SDL_GL_CONTEXT_PROFILE_CORE, 2, 1 },
-	{ SDL_GL_CONTEXT_PROFILE_ES, 3, 1 },
-	{ SDL_GL_CONTEXT_PROFILE_ES, 2, 0 },
-	{ 0, 0, 0 },
-};
-
-static int
-startSDL2(void)
-{
-	GLenum status;
-	SDL_Window *win;
-	SDL_GLContext ctx;
-	DisplayMode *mode;
-
-	mode = &glGlobals.modes[glGlobals.currentMode];
-
-	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, glGlobals.numSamples);
-
-	int i;
-	for(i = 0; profiles[i].gl; i++){
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, profiles[i].gl);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, profiles[i].major);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, profiles[i].minor);
-
-		if(mode->flags & VIDEOMODEEXCLUSIVE) {
-			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, mode->mode.w, mode->mode.h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
-			if (win)
-				SDL_SetWindowDisplayMode(win, &mode->mode);
-		} else {
-			win = SDL_CreateWindow(glGlobals.winTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, glGlobals.winWidth, glGlobals.winHeight, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
-			if (win)
-				SDL_SetWindowDisplayMode(win, NULL);
-		}
-		if(win){
-			gl3Caps.gles = profiles[i].gl == SDL_GL_CONTEXT_PROFILE_ES;
-			gl3Caps.glversion = profiles[i].major*10 + profiles[i].minor;
-			break;
-		}
-	}
-	if(win == nil){
-		RWERROR((ERR_GENERAL, SDL_GetError()));
-		return 0;
-	}
-	ctx = SDL_GL_CreateContext(win);
-	printf("OpenGL version: %s\n", glGetString(GL_VERSION));
-
-	/* Init GLEW */
-	glewExperimental = GL_TRUE;
-	status = glewInit();
-	if(status != GLEW_OK){
-		RWERROR((ERR_GENERAL, glewGetErrorString(status)));
-		SDL_GL_DeleteContext(ctx);
-		SDL_DestroyWindow(win);
-		return 0;
-	}
-	if(!GLEW_VERSION_3_3){
-		RWERROR((ERR_GENERAL, "OpenGL 3.3 needed"));
-		SDL_GL_DeleteContext(ctx);
-		SDL_DestroyWindow(win);
-		return 0;
-	}
-	glGlobals.window = win;
-	glGlobals.glcontext = ctx;
-	*glGlobals.pWindow = win;
-	glGlobals.presentWidth = 0;
-	glGlobals.presentHeight = 0;
-	glGlobals.presentOffX = 0;
-	glGlobals.presentOffY = 0;
-	return 1;
-}
-
-static int
-stopSDL2(void)
-{
 	SDL_GL_DeleteContext(glGlobals.glcontext);
 	SDL_DestroyWindow(glGlobals.window);
+	SDL_QuitSubSystem(SDL_INIT_VIDEO);
 	return 1;
 }
 #else
 
 static void
-addVideoMode(const GLFWvidmode *mode)
+addVideoMode(/*const GLFWvidmode *mode*/)
 {
-	int i;
+	/*int i;
 
 	for(i = 1; i < glGlobals.numModes; i++){
 		if(glGlobals.modes[i].mode.width == mode->width &&
@@ -1661,11 +1591,12 @@ addVideoMode(const GLFWvidmode *mode)
 	// none found, add
 	glGlobals.modes[glGlobals.numModes].mode = *mode;
 	glGlobals.modes[glGlobals.numModes].flags = VIDEOMODEEXCLUSIVE;
-	glGlobals.numModes++;
+	glGlobals.numModes++;*/
 }
 
 static void
 makeVideoModeList(void)
+#ifndef PSP2
 {
 	int i, num;
 	const GLFWvidmode *modes;
@@ -1689,6 +1620,11 @@ makeVideoModeList(void)
 		for(glGlobals.modes[i].depth = 1; glGlobals.modes[i].depth < num; glGlobals.modes[i].depth <<= 1);
 	}
 }
+#else
+// stub video modes manually: 544p
+{
+}
+#endif
 
 static int
 openGLFW(EngineOpenParams *openparams)
@@ -1696,17 +1632,47 @@ openGLFW(EngineOpenParams *openparams)
 	glGlobals.winWidth = openparams->width;
 	glGlobals.winHeight = openparams->height;
 	glGlobals.winTitle = openparams->windowtitle;
-	glGlobals.pWindow = openparams->window;
+	// glGlobals.pWindow = openparams->window;
 
 	memset(&gl3Caps, 0, sizeof(gl3Caps));
 
-	/* Init GLFW */
-	if(!glfwInit()){
-		RWERROR((ERR_GENERAL, "glfwInit() failed"));
-		return 0;
-	}
+	gVertexBufferIm2DPtr[0] = (float*)malloc(0x500000);
+	gVertexBufferIm2DPtr[1] = (float*)malloc(0x500000);
+	gVertexBufferIm3DPtr[0] = (float*)malloc(0x1800000);
+	gVertexBufferIm3DPtr[1] = (float*)malloc(0x1800000);
+	gIndicesIm2DPtr[0]   = (uint16_t*)malloc(0x600000);
+	gIndicesIm2DPtr[1]   = (uint16_t*)malloc(0x600000);
+	gIndicesIm3DPtr[0]   = (uint16_t*)malloc(0x1800000);
+	gIndicesIm3DPtr[1]   = (uint16_t*)malloc(0x1800000);
 
-	glGlobals.monitor = glfwGetMonitors(&glGlobals.numMonitors)[0];
+	gConstIndices = (uint16_t*)malloc(sizeof(uint16_t) * 0xFFFF);
+	
+	gVertexBufferIm2D = gVertexBufferIm2DPtr[0];
+	gVertexBufferIm3D = gVertexBufferIm3DPtr[0];
+	gIndicesIm2D = gIndicesIm2DPtr[0];
+	gIndicesIm3D = gIndicesIm3DPtr[0];
+	
+	for (uint16_t i = 0; i < 0xFFFF; i++) {
+		gConstIndices[i] = i;
+	}
+#ifdef PSP2_USE_SHADER_COMPILER
+	vglSetupRuntimeShaderCompiler(SHARK_OPT_UNSAFE, SHARK_ENABLE, SHARK_ENABLE, SHARK_ENABLE);
+#else
+	vglEnableRuntimeShaderCompiler(GL_FALSE);
+#endif
+	vglInitExtended(0x10000, 960, 544, 0x100000, SCE_GXM_MULTISAMPLE_4X);
+	vglUseVram(GL_TRUE);
+#ifdef MIAMI_SUPPORT
+	vglStartRendering();
+#endif
+
+	/* Init GLFW */
+	// if(!glfwInit()){
+		// RWERROR((ERR_GENERAL, "glfwInit() failed"));
+		// return 0;
+	// }
+
+	// glGlobals.monitor = glfwGetMonitors(&glGlobals.numMonitors)[0];
 
 	makeVideoModeList();
 
@@ -1716,7 +1682,7 @@ openGLFW(EngineOpenParams *openparams)
 static int
 closeGLFW(void)
 {
-	glfwTerminate();
+	// glfwTerminate();
 	return 1;
 }
 
@@ -1726,71 +1692,71 @@ glfwerr(int error, const char *desc)
 	fprintf(stderr, "GLFW Error: %s\n", desc);
 }
 
-static struct {
-	int gl;
-	int major, minor;
-} profiles[] = {
-	{ GLFW_OPENGL_API, 3, 3 },
-	{ GLFW_OPENGL_API, 2, 1 },
-	{ GLFW_OPENGL_ES_API, 3, 1 },
-	{ GLFW_OPENGL_ES_API, 2, 0 },
-	{ 0, 0, 0 },
-};
+// static struct {
+	// int gl;
+	// int major, minor;
+// } profiles[] = {
+	// { GLFW_OPENGL_API, 3, 3 },
+	// { GLFW_OPENGL_API, 2, 1 },
+	// { GLFW_OPENGL_ES_API, 3, 1 },
+	// { GLFW_OPENGL_ES_API, 2, 0 },
+	// { 0, 0, 0 },
+// };
 
 static int
 startGLFW(void)
 {
 	GLenum status;
-	GLFWwindow *win;
-	DisplayMode *mode;
+	// GLFWwindow *win;
+	// DisplayMode *mode;
 
-	mode = &glGlobals.modes[glGlobals.currentMode];
+	// mode = &glGlobals.modes[glGlobals.currentMode];
 
-	glfwSetErrorCallback(glfwerr);
-	glfwWindowHint(GLFW_RED_BITS, mode->mode.redBits);
-	glfwWindowHint(GLFW_GREEN_BITS, mode->mode.greenBits);
-	glfwWindowHint(GLFW_BLUE_BITS, mode->mode.blueBits);
-	glfwWindowHint(GLFW_REFRESH_RATE, mode->mode.refreshRate);
-	glfwWindowHint(GLFW_SAMPLES, glGlobals.numSamples);
+	// glfwSetErrorCallback(glfwerr);
+	// glfwWindowHint(GLFW_RED_BITS, mode->mode.redBits);
+	// glfwWindowHint(GLFW_GREEN_BITS, mode->mode.greenBits);
+	// glfwWindowHint(GLFW_BLUE_BITS, mode->mode.blueBits);
+	// glfwWindowHint(GLFW_REFRESH_RATE, mode->mode.refreshRate);
+	// glfwWindowHint(GLFW_SAMPLES, glGlobals.numSamples);
 
-	int i;
-	for(i = 0; profiles[i].gl; i++){
-		glfwWindowHint(GLFW_CLIENT_API, profiles[i].gl);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, profiles[i].major);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, profiles[i].minor);
+	// int i;
+	// for(i = 0; profiles[i].gl; i++){
+		// glfwWindowHint(GLFW_CLIENT_API, profiles[i].gl);
+		// glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, profiles[i].major);
+		// glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, profiles[i].minor);
 
-		if(mode->flags & VIDEOMODEEXCLUSIVE)
-			win = glfwCreateWindow(mode->mode.width, mode->mode.height, glGlobals.winTitle, glGlobals.monitor, nil);
-		else
-			win = glfwCreateWindow(glGlobals.winWidth, glGlobals.winHeight, glGlobals.winTitle, nil, nil);
-		if(win){
-			gl3Caps.gles = profiles[i].gl == GLFW_OPENGL_ES_API;
-			gl3Caps.glversion = profiles[i].major*10 + profiles[i].minor;
-			break;
-		}
-	}
-	if(win == nil){
-		RWERROR((ERR_GENERAL, "glfwCreateWindow() failed"));
-		return 0;
-	}
-	glfwMakeContextCurrent(win);
+		// if(mode->flags & VIDEOMODEEXCLUSIVE)
+			// win = glfwCreateWindow(mode->mode.width, mode->mode.height, glGlobals.winTitle, glGlobals.monitor, nil);
+		// else
+			// win = glfwCreateWindow(glGlobals.winWidth, glGlobals.winHeight, glGlobals.winTitle, nil, nil);
+		// if(win){
+			// gl3Caps.gles = profiles[i].gl == GLFW_OPENGL_ES_API;
+			// gl3Caps.glversion = profiles[i].major*10 + profiles[i].minor;
+			// break;
+		// }
+	// }
+	// if(win == nil){
+		// RWERROR((ERR_GENERAL, "glfwCreateWindow() failed"));
+		// return 0;
+	// }
+	// glfwMakeContextCurrent(win);
 	printf("OpenGL version: %s\n", glGetString(GL_VERSION));
 
 	/* Init GLEW */
-	glewExperimental = GL_TRUE;
-	status = glewInit();
-	if(status != GLEW_OK){
-		RWERROR((ERR_GENERAL, glewGetErrorString(status)));
-		glfwDestroyWindow(win);
-		return 0;
-	}
-	if(!GLEW_VERSION_3_3){
-		RWERROR((ERR_GENERAL, "OpenGL 3.3 needed"));
-		glfwDestroyWindow(win);
-		return 0;
-	}
-	glGlobals.window = win;
-	*glGlobals.pWindow = win;
+	// glewExperimental = GL_TRUE;
+	// status = glewInit();
+	// if(status != GLEW_OK){
+		// RWERROR((ERR_GENERAL, glewGetErrorString(status)));
+		// glfwDestroyWindow(win);
+		// return 0;
+	// }
+	// if(!GLEW_VERSION_3_3){
+		// RWERROR((ERR_GENERAL, "OpenGL 3.3 needed"));
+		// glfwDestroyWindow(win);
+		// return 0;
+	// }
+	// glGlobals.window = win;
+	// *glGlobals.pWindow = win;
 	glGlobals.presentWidth = 0;
 	glGlobals.presentHeight = 0;
 	glGlobals.presentOffX = 0;
@@ -1801,7 +1767,7 @@ startGLFW(void)
 static int
 stopGLFW(void)
 {
-	glfwDestroyWindow(glGlobals.window);
+	// glfwDestroyWindow(glGlobals.window);
 	return 1;
 }
 #endif
@@ -1809,28 +1775,29 @@ stopGLFW(void)
 static int
 initOpenGL(void)
 {
-	int numExt;
-	glGetIntegerv(GL_NUM_EXTENSIONS, &numExt);
-	for(int i = 0; i < numExt; i++){
-		const char *ext = (const char*)glGetStringi(GL_EXTENSIONS, i);
-		if(strcmp(ext, "GL_EXT_texture_compression_s3tc") == 0)
-			gl3Caps.dxtSupported = true;
-		else if(strcmp(ext, "GL_KHR_texture_compression_astc_ldr") == 0)
-			gl3Caps.astcSupported = true;
-//		printf("%d %s\n", i, ext);
-	}
+	// int numExt;
+	// glGetIntegerv(GL_NUM_EXTENSIONS, &numExt);
+	// for(int i = 0; i < numExt; i++){
+		// const char *ext = (const char*)glGetStringi(GL_EXTENSIONS, i);
+		// if(strcmp(ext, "GL_EXT_texture_compression_s3tc") == 0)
+			// gl3Caps.dxtSupported = true;
+		// else if(strcmp(ext, "GL_KHR_texture_compression_astc_ldr") == 0)
+			// gl3Caps.astcSupported = true;
+// //		printf("%d %s\n", i, ext);
+	// }
 
-	if(gl3Caps.gles){
-		if(gl3Caps.glversion >= 30)
-			shaderDecl = shaderDecl310es;
-		else
-			shaderDecl = shaderDecl100es;
-	}else{
-		if(gl3Caps.glversion >= 30)
-			shaderDecl = shaderDecl330;
-		else
-			shaderDecl = shaderDecl120;
-	}
+	// if(gl3Caps.gles){
+		// if(gl3Caps.glversion >= 30)
+			// shaderDecl = shaderDecl310es;
+		// else
+			// shaderDecl = shaderDecl100es;
+	// }else{
+		// if(gl3Caps.glversion >= 30)
+			// shaderDecl = shaderDecl330;
+		// else
+			// shaderDecl = shaderDecl120;
+	// }
+	shaderDecl = "";
 
 #ifndef RW_GL_USE_UBOS
 	u_alphaRef = registerUniform("u_alphaRef");
@@ -1840,8 +1807,7 @@ initOpenGL(void)
 //	u_fogRange = registerUniform("u_fogRange");
 //	u_fogDisable = registerUniform("u_fogDisable");
 	u_fogColor = registerUniform("u_fogColor");
-	u_proj = registerUniform("u_proj");
-	u_view = registerUniform("u_view");
+	u_wvp = registerUniform("u_wvp");
 	u_world = registerUniform("u_world");
 	u_ambLight = registerUniform("u_ambLight");
 	u_lightParams = registerUniform("u_lightParams");
@@ -1871,41 +1837,41 @@ initOpenGL(void)
 
 	resetRenderState();
 
-	glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy);
+	// glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy);
 
-	if(gl3Caps.glversion >= 30){
-		glGenVertexArrays(1, &vao);
-		glBindVertexArray(vao);
-	}
+	// if(gl3Caps.glversion >= 30){
+		// glGenVertexArrays(1, &vao);
+		// glBindVertexArray(vao);
+	// }
 
-#ifdef RW_GL_USE_UBOS
-	glGenBuffers(1, &ubo_state);
-	glBindBuffer(GL_UNIFORM_BUFFER, ubo_state);
-	glBindBufferBase(GL_UNIFORM_BUFFER, gl3::findBlock("State"), ubo_state);
-	glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformState), &uniformState,
-	             GL_STREAM_DRAW);
-	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+// #ifdef RW_GL_USE_UBOS
+	// glGenBuffers(1, &ubo_state);
+	// glBindBuffer(GL_UNIFORM_BUFFER, ubo_state);
+	// glBindBufferBase(GL_UNIFORM_BUFFER, gl3::findBlock("State"), ubo_state);
+	// glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformState), &uniformState,
+	             // GL_STREAM_DRAW);
+	// glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-	glGenBuffers(1, &ubo_scene);
-	glBindBuffer(GL_UNIFORM_BUFFER, ubo_scene);
-	glBindBufferBase(GL_UNIFORM_BUFFER, gl3::findBlock("Scene"), ubo_scene);
-	glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformScene), &uniformScene,
-	             GL_STREAM_DRAW);
-	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+	// glGenBuffers(1, &ubo_scene);
+	// glBindBuffer(GL_UNIFORM_BUFFER, ubo_scene);
+	// glBindBufferBase(GL_UNIFORM_BUFFER, gl3::findBlock("Scene"), ubo_scene);
+	// glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformScene), &uniformScene,
+	             // GL_STREAM_DRAW);
+	// glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-	glGenBuffers(1, &ubo_object);
-	glBindBuffer(GL_UNIFORM_BUFFER, ubo_object);
-	glBindBufferBase(GL_UNIFORM_BUFFER, gl3::findBlock("Object"), ubo_object);
-	glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformObject), &uniformObject,
-	             GL_STREAM_DRAW);
-	glBindBuffer(GL_UNIFORM_BUFFER, 0);
-#endif
+	// glGenBuffers(1, &ubo_object);
+	// glBindBuffer(GL_UNIFORM_BUFFER, ubo_object);
+	// glBindBufferBase(GL_UNIFORM_BUFFER, gl3::findBlock("Object"), ubo_object);
+	// glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformObject), &uniformObject,
+	             // GL_STREAM_DRAW);
+	// glBindBuffer(GL_UNIFORM_BUFFER, 0);
+// #endif
 
-#include "shaders/default_vs_gl.inc"
-#include "shaders/simple_fs_gl.inc"
-	const char *vs[] = { shaderDecl, header_vert_src, default_vert_src, nil };
-	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
-	defaultShader = Shader::create(vs, fs);
+#include "shaders/default_vs_gl.h"
+#include "shaders/simple_fs_gl.h"
+	const char *vs[] = { (const char*)default_v, (const char*)&size_default_v, nil };
+	const char *fs[] = { (const char*)simple_f, (const char*)&size_simple_f, nil };
+	defaultShader = Shader::create(vs, fs, false);
 	assert(defaultShader);
 
 	openIm2D();
@@ -1932,8 +1898,6 @@ finalizeOpenGL(void)
 static int
 deviceSystemSDL2(DeviceReq req, void *arg, int32 n)
 {
-	VideoMode *rwmode;
-
 	switch(req){
 	case DEVICEOPEN:
 		return openSDL2((EngineOpenParams*)arg);
@@ -1941,50 +1905,12 @@ deviceSystemSDL2(DeviceReq req, void *arg, int32 n)
 		return closeSDL2();
 
 	case DEVICEINIT:
-		return startSDL2() && initOpenGL();
+		return initOpenGL();
 	case DEVICETERM:
-		return termOpenGL() && stopSDL2();
+		return termOpenGL();
 
-	case DEVICEFINALIZE:
-		return finalizeOpenGL();
+	// TODO: implement subsystems and video modes
 
-	// TODO: implement subsystems
-
-	case DEVICEGETNUMVIDEOMODES:
-		return glGlobals.numModes;
-
-	case DEVICEGETCURRENTVIDEOMODE:
-		return glGlobals.currentMode;
-
-	case DEVICESETVIDEOMODE:
-		if(n >= glGlobals.numModes)
-			return 0;
-		glGlobals.currentMode = n;
-		return 1;
-
-	case DEVICEGETVIDEOMODEINFO:
-		rwmode = (VideoMode*)arg;
-		rwmode->width = glGlobals.modes[n].mode.w;
-		rwmode->height = glGlobals.modes[n].mode.h;
-		rwmode->depth = glGlobals.modes[n].depth;
-		rwmode->flags = glGlobals.modes[n].flags;
-		return 1;
-
-	case DEVICEGETMAXMULTISAMPLINGLEVELS:
-		{
-			GLint maxSamples;
-			glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
-			if(maxSamples == 0)
-				return 1;
-			return maxSamples;
-		}
-	case DEVICEGETMULTISAMPLINGLEVELS:
-		if(glGlobals.numSamples == 0)
-			return 1;
-		return glGlobals.numSamples;
-	case DEVICESETMULTISAMPLINGLEVELS:
-		glGlobals.numSamples = (uint32)n;
-		return 1;
 	default:
 		assert(0 && "not implemented");
 		return 0;
@@ -1997,7 +1923,7 @@ deviceSystemSDL2(DeviceReq req, void *arg, int32 n)
 static int
 deviceSystemGLFW(DeviceReq req, void *arg, int32 n)
 {
-	GLFWmonitor **monitors;
+	// GLFWmonitor **monitors;
 	VideoMode *rwmode;
 
 	switch(req){
@@ -2016,54 +1942,64 @@ deviceSystemGLFW(DeviceReq req, void *arg, int32 n)
 
 
 	case DEVICEGETNUMSUBSYSTEMS:
-		return glGlobals.numMonitors;
+		// return glGlobals.numMonitors;
+		return 1;
 
 	case DEVICEGETCURRENTSUBSYSTEM:
-		return glGlobals.currentMonitor;
+		// return glGlobals.currentMonitor;
+		return 0;
 
 	case DEVICESETSUBSYSTEM:
-		monitors = glfwGetMonitors(&glGlobals.numMonitors);
-		if(n >= glGlobals.numMonitors)
-			return 0;
-		glGlobals.currentMonitor = n;
-		glGlobals.monitor = monitors[glGlobals.currentMonitor];
+		// monitors = glfwGetMonitors(&glGlobals.numMonitors);
+		// if(n >= glGlobals.numMonitors)
+			// return 0;
+		// glGlobals.currentMonitor = n;
+		// glGlobals.monitor = monitors[glGlobals.currentMonitor];
 		return 1;
 
 	case DEVICEGETSUBSSYSTEMINFO:
-		monitors = glfwGetMonitors(&glGlobals.numMonitors);
-		if(n >= glGlobals.numMonitors)
-			return 0;
-		strncpy(((SubSystemInfo*)arg)->name, glfwGetMonitorName(monitors[n]), sizeof(SubSystemInfo::name));
+		// monitors = glfwGetMonitors(&glGlobals.numMonitors);
+		// if(n >= glGlobals.numMonitors)
+			// return 0;
+		// strncpy(((SubSystemInfo*)arg)->name, glfwGetMonitorName(monitors[n]), sizeof(SubSystemInfo::name));
+		strncpy(((SubSystemInfo*)arg)->name, "PSVita Screen Stub", sizeof(SubSystemInfo::name));
 		return 1;
 
 
 	case DEVICEGETNUMVIDEOMODES:
-		return glGlobals.numModes;
+		// return glGlobals.numModes;
+		return 1;
 
 	case DEVICEGETCURRENTVIDEOMODE:
-		return glGlobals.currentMode;
+		// return glGlobals.currentMode;
+		return 0;
 
 	case DEVICESETVIDEOMODE:
-		if(n >= glGlobals.numModes)
-			return 0;
-		glGlobals.currentMode = n;
+		// if(n >= glGlobals.numModes)
+			// return 0;
+		// glGlobals.currentMode = n;
 		return 1;
 
 	case DEVICEGETVIDEOMODEINFO:
 		rwmode = (VideoMode*)arg;
-		rwmode->width = glGlobals.modes[n].mode.width;
-		rwmode->height = glGlobals.modes[n].mode.height;
-		rwmode->depth = glGlobals.modes[n].depth;
-		rwmode->flags = glGlobals.modes[n].flags;
+		// rwmode->width = glGlobals.modes[n].mode.width;
+		// rwmode->height = glGlobals.modes[n].mode.height;
+		// rwmode->depth = glGlobals.modes[n].depth;
+		// rwmode->flags = glGlobals.modes[n].flags;
+		rwmode->width = 960;
+		rwmode->height = 544;
+		rwmode->depth = 32;
+		rwmode->flags = VIDEOMODEEXCLUSIVE;
 		return 1;
 
 	case DEVICEGETMAXMULTISAMPLINGLEVELS:
 		{
-			GLint maxSamples;
-			glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
-			if(maxSamples == 0)
-				return 1;
-			return maxSamples;
+			// GLint maxSamples;
+			// glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+			// if(maxSamples == 0)
+				// return 1;
+			// return maxSamples;
+			return 1;
 		}
 	case DEVICEGETMULTISAMPLINGLEVELS:
 		if(glGlobals.numSamples == 0)

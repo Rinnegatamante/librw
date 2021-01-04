@@ -10,15 +10,21 @@
 #include "../rwobjects.h"
 #include "../rwengine.h"
 #ifdef RW_OPENGL
-#include <GL/glew.h>
 #include "rwgl3.h"
 #include "rwgl3shader.h"
 
 namespace rw {
 namespace gl3 {
 
+#ifdef PSP2_USE_SHADER_COMPILER
+#ifdef RW_GLES2
+#include "gl2_shaders/header_vs.inc"
+#include "gl2_shaders/header_fs.inc"
+#else
 #include "shaders/header_vs.inc"
 #include "shaders/header_fs.inc"
+#endif
+#endif
 
 UniformRegistry uniformRegistry;
 
@@ -94,18 +100,27 @@ printShaderSource(const char **src)
 	}
 }
 
+char shader_source_buffer[16 * 1024];
+
 static int
 compileshader(GLenum type, const char **src, GLuint *shader)
 {
+	GLint shdr = glCreateShader(type);
+#ifdef PSP2_USE_SHADER_COMPILER	
 	GLint n;
-	GLint shdr, success;
+	Glint success;
 	GLint len;
 	char *log;
-
-	for(n = 0; src[n]; n++);
-
-	shdr = glCreateShader(type);
-	glShaderSource(shdr, n, src, nil);
+	
+	shader_source_buffer[0] = 0;
+	
+	for(n = 0; src[n]; n++) {
+		sprintf(shader_source_buffer, "%s%s", shader_source_buffer, src[n]);
+	}
+	
+	const char *_src = (const char*)shader_source_buffer;
+	
+	glShaderSource(shdr, 1, &_src, nil);
 	glCompileShader(shdr);
 	glGetShaderiv(shdr, GL_COMPILE_STATUS, &success);
 	if(!success){
@@ -121,10 +136,16 @@ compileshader(GLenum type, const char **src, GLuint *shader)
 	}
 	*shader = shdr;
 	return 0;
+#else
+	unsigned int size = *((unsigned int*)src[1]);
+	glShaderBinary(1, (const uint32_t*)&shdr, 0, src[0], size - 1);
+	*shader = shdr;
+	return 0;
+#endif
 }
 
 static int
-linkprogram(GLint vs, GLint fs, GLuint *program)
+linkprogram(GLint vs, GLint fs, GLuint *program, bool is_2d)
 {
 	GLint prog, success;
 	GLint len;
@@ -132,36 +153,26 @@ linkprogram(GLint vs, GLint fs, GLuint *program)
 
 	prog = glCreateProgram();
 
-	if(gl3Caps.glversion < 30){
-		// TODO: perhaps just do this always and get rid of the layout stuff?
-		glBindAttribLocation(prog, ATTRIB_POS, "in_pos");
-		glBindAttribLocation(prog, ATTRIB_NORMAL, "in_normal");
-		glBindAttribLocation(prog, ATTRIB_COLOR, "in_color");
-		glBindAttribLocation(prog, ATTRIB_WEIGHTS, "in_weights");
-		glBindAttribLocation(prog, ATTRIB_INDICES, "in_indices");
-		glBindAttribLocation(prog, ATTRIB_TEXCOORDS0, "in_tex0");
-		glBindAttribLocation(prog, ATTRIB_TEXCOORDS1, "in_tex1");
-	}
-
 	glAttachShader(prog, vs);
 	glAttachShader(prog, fs);
+
+	int stride = 0;
+	int pos_size = is_2d ? 4 : 3;
+	stride += vglBindPackedAttribLocation(prog, "in_pos"    , pos_size, GL_FLOAT,         stride, stride + sizeof(float) * pos_size) * (sizeof(float) * pos_size);
+	stride += vglBindPackedAttribLocation(prog, "in_normal" ,        3, GL_FLOAT,         stride, stride + sizeof(float) * 3) * (sizeof(float) * 3);
+	stride += vglBindPackedAttribLocation(prog, "in_color"  ,        4, GL_UNSIGNED_BYTE, stride, stride + 4) * 4;
+	stride += vglBindPackedAttribLocation(prog, "in_tex0"   ,        2, GL_FLOAT,         stride, stride + sizeof(float) * 2) * (sizeof(float) * 2);
+	stride += vglBindPackedAttribLocation(prog, "in_weights",        4, GL_FLOAT,         stride, stride + sizeof(float) * 4) * (sizeof(float) * 4);
+	          vglBindPackedAttribLocation(prog, "in_indices",        4, GL_UNSIGNED_BYTE, stride, stride + 4);
+
 	glLinkProgram(prog);
-	glGetProgramiv(prog, GL_LINK_STATUS, &success);
-	if(!success){
-		fprintf(stderr, "Error in program\n");
-		glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &len);
-		log = (char*)rwMalloc(len, MEMDUR_FUNCTION);
-		glGetProgramInfoLog(prog, len, nil, log);
-		fprintf(stderr, "%s\n", log);
-		rwFree(log);
-		return 1;
-	}
+
 	*program = prog;
 	return 0;
 }
 
 Shader*
-Shader::create(const char **vsrc, const char **fsrc)
+Shader::create(const char **vsrc, const char **fsrc, bool is_2d)
 {
 	GLuint vs, fs, program;
 	int i;
@@ -177,14 +188,12 @@ Shader::create(const char **vsrc, const char **fsrc)
 		return nil;
 	}
 
-	fail = linkprogram(vs, fs, &program);
+	fail = linkprogram(vs, fs, &program, is_2d);
 	if(fail){
 		glDeleteShader(fs);
 		glDeleteShader(vs);
 		return nil;
 	}
-	glDeleteProgram(vs);
-	glDeleteProgram(fs);
 
 	Shader *sh = rwNewT(Shader, 1, MEMDUR_EVENT | ID_DRIVER);	 // or global?
 
@@ -215,14 +224,6 @@ Shader::create(const char **vsrc, const char **fsrc)
 	printf("\n");
 #endif
 
-	// set uniform block binding
-	for(i = 0; i < uniformRegistry.numBlocks; i++){
-		int idx = glGetUniformBlockIndex(program,
-		                                 uniformRegistry.blockNames[i]);
-		if(idx >= 0)
-			glUniformBlockBinding(program, idx, i);
-	}
-
 	// query uniform locations
 	sh->program = program;
 	sh->uniformLocations = rwNewT(GLint, uniformRegistry.numUniforms, MEMDUR_EVENT | ID_DRIVER);
@@ -232,13 +233,6 @@ Shader::create(const char **vsrc, const char **fsrc)
 
 	// set samplers
 	glUseProgram(program);
-	char name[64];
-	GLint loc;
-	for(i = 0; i < 4; i++){
-		sprintf(name, "tex%d", i);
-		loc = glGetUniformLocation(program, name);
-		glUniform1i(loc, i);
-	}
 
 	// reset program
 	if(currentShader)
@@ -250,10 +244,10 @@ Shader::create(const char **vsrc, const char **fsrc)
 void
 Shader::use(void)
 {
-	if(currentShader != this){
+	//if(currentShader != this){
 		glUseProgram(this->program);
 		currentShader = this;
-	}
+	//}
 }
 
 void

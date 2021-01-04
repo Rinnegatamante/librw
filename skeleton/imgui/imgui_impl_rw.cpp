@@ -136,7 +136,7 @@ ImGui_ImplRW_CreateFontsTexture()
 	image = rw::Image::create(width, height, 32);
 	image->allocate();
 	for(int y = 0; y < height; y++)
-		memcpy(image->pixels + image->stride*y, pixels + width*4* y, width*4);
+		memcpy_neon(image->pixels + image->stride*y, pixels + width*4* y, width*4);
 	g_FontTexture = rw::Texture::create(rw::Raster::createFromImage(image));
 	g_FontTexture->setFilter(rw::Texture::LINEAR);
 	image->destroy();

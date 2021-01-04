@@ -13,8 +13,13 @@
 #include "../rwplugins.h"
 #include "rwwdgl.h"
 
+#ifdef PSP2
+#include <vitasdk.h>
+#include <vitaGL.h>
+#else
 #ifdef RW_OPENGL
 #include <GL/glew.h>
+#endif
 #endif
 
 #define PLUGIN_ID 2
@@ -77,49 +82,49 @@ printAttribInfo(AttribDesc *attribs, int n)
 }
 */
 
-#ifdef RW_OPENGL
-void
-uploadGeo(Geometry *geo)
-{
-	InstanceDataHeader *inst = (InstanceDataHeader*)geo->instData;
-	MeshHeader *meshHeader = geo->meshHeader;
+// #ifdef RW_OPENGL
+// void
+// uploadGeo(Geometry *geo)
+// {
+	// InstanceDataHeader *inst = (InstanceDataHeader*)geo->instData;
+	// MeshHeader *meshHeader = geo->meshHeader;
 
-	glGenBuffers(1, &inst->vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, inst->vbo);
-	glBufferData(GL_ARRAY_BUFFER, inst->dataSize,
-	             inst->data, GL_STATIC_DRAW);
+	// glGenBuffers(1, &inst->vbo);
+	// glBindBuffer(GL_ARRAY_BUFFER, inst->vbo);
+	// glBufferData(GL_ARRAY_BUFFER, inst->dataSize,
+	             // inst->data, GL_STATIC_DRAW);
 
-	glGenBuffers(1, &inst->ibo);
-	glBindBuffer(GL_ARRAY_BUFFER, inst->ibo);
-	glBufferData(GL_ARRAY_BUFFER, meshHeader->totalIndices*2,
-	             0, GL_STATIC_DRAW);
-	GLintptr offset = 0;
-	for(uint32 i = 0; i < meshHeader->numMeshes; i++){
-		Mesh *mesh = &meshHeader->getMeshes()[i];
-		glBufferSubData(GL_ARRAY_BUFFER, offset, mesh->numIndices*2,
-		                mesh->indices);
-		offset += mesh->numIndices*2;
-	}
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-}
+	// glGenBuffers(1, &inst->ibo);
+	// glBindBuffer(GL_ARRAY_BUFFER, inst->ibo);
+	// glBufferData(GL_ARRAY_BUFFER, meshHeader->totalIndices*2,
+	             // 0, GL_STATIC_DRAW);
+	// GLintptr offset = 0;
+	// for(uint32 i = 0; i < meshHeader->numMeshes; i++){
+		// Mesh *mesh = &meshHeader->getMeshes()[i];
+		// glBufferSubData(GL_ARRAY_BUFFER, offset, mesh->numIndices*2,
+		                // mesh->indices);
+		// offset += mesh->numIndices*2;
+	// }
+	// glBindBuffer(GL_ARRAY_BUFFER, 0);
+// }
 
-void
-setAttribPointers(InstanceDataHeader *inst)
-{
-	static GLenum attribType[] = {
-		GL_FLOAT,
-		GL_BYTE, GL_UNSIGNED_BYTE,
-		GL_SHORT, GL_UNSIGNED_SHORT
-	};
-	for(int32 i = 0; i < inst->numAttribs; i++){
-		AttribDesc *a = &inst->attribs[i];
-		glEnableVertexAttribArray(a->index);
-		glVertexAttribPointer(a->index, a->size, attribType[a->type],
-		                      a->normalized, a->stride,
-		                      (void*)(uint64)a->offset);
-	}
-}
-#endif
+// void
+// setAttribPointers(InstanceDataHeader *inst)
+// {
+	// static GLenum attribType[] = {
+		// GL_FLOAT,
+		// GL_BYTE, GL_UNSIGNED_BYTE,
+		// GL_SHORT, GL_UNSIGNED_SHORT
+	// };
+	// for(int32 i = 0; i < inst->numAttribs; i++){
+		// AttribDesc *a = &inst->attribs[i];
+		// glEnableVertexAttribArray(a->index);
+		// glVertexAttribPointer(a->index, a->size, attribType[a->type],
+		                      // a->normalized, a->stride,
+		                      // (void*)(uint64)a->offset);
+	// }
+// }
+// #endif
 
 void
 packattrib(uint8 *dst, float32 *src, AttribDesc *a, float32 scale=1.0f)
@@ -130,7 +135,7 @@ packattrib(uint8 *dst, float32 *src, AttribDesc *a, float32 scale=1.0f)
 
 	switch(a->type){
 	case 0:	// float
-		memcpy(dst, src, a->size*4);
+		memcpy_neon(dst, src, a->size*4);
 		break;
 
 	// TODO: maybe have loop inside if?
@@ -184,7 +189,7 @@ unpackattrib(float *dst, uint8 *src, AttribDesc *a, float32 scale=1.0f)
 
 	switch(a->type){
 	case 0:	// float
-		memcpy(dst, src, a->size*4);
+		memcpy_neon(dst, src, a->size*4);
 		break;
 
 	// TODO: maybe have loop inside if?
@@ -651,7 +656,7 @@ skinUninstanceCB(Geometry *geo)
 	uint8 *data = skin->data;
 	float *invMats = skin->inverseMatrices;
 	skin->init(skin->numBones, skin->numBones, geo->numVertices);
-	memcpy(skin->inverseMatrices, invMats, skin->numBones*64);
+	memcpy_neon(skin->inverseMatrices, invMats, skin->numBones*64);
 	rwFree(data);
 
 	uint8 *p;
@@ -833,7 +838,7 @@ Texture::upload(void)
 
 	static GLenum wrap[] = {
 		0, GL_REPEAT, GL_MIRRORED_REPEAT,
-		GL_CLAMP_TO_EDGE, GL_CLAMP_TO_BORDER
+		GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE
 	};
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
 		wrap[(this->filterAddressing >> 8) & 0xF]);
@@ -842,7 +847,7 @@ Texture::upload(void)
 
 	switch(r->format & 0xF00){
 	case Raster::C8888:
-		glTexImage2D(GL_TEXTURE_2D, 0, 4, r->width, r->height,
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, r->width, r->height,
 		             0, GL_RGBA, GL_UNSIGNED_BYTE, r->pixels);
 		break;
 	default:

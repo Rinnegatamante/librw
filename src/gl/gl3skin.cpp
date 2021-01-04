@@ -12,14 +12,16 @@
 #include "../rwobjects.h"
 #include "../rwanim.h"
 #include "../rwplugins.h"
-#ifdef RW_OPENGL
-#include <GL/glew.h>
-#endif
+// #ifdef RW_OPENGL
+// #include <GL/glew.h>
+// #endif
 #include "rwgl3.h"
 #include "rwgl3shader.h"
 #include "rwgl3plg.h"
 
 #include "rwgl3impl.h"
+
+#include "psp2_shaders.h"
 
 namespace rw {
 namespace gl3 {
@@ -66,10 +68,10 @@ skinInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 			a->type = GL_FLOAT;
 			a->normalized = GL_FALSE;
 			a->offset = stride;
-			stride += 12;
 			a++;
 		}
-
+		stride += 12;
+		
 		// Prelighting
 		if(isPrelit){
 			a->index = ATTRIB_COLOR;
@@ -77,9 +79,9 @@ skinInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 			a->type = GL_UNSIGNED_BYTE;
 			a->normalized = GL_TRUE;
 			a->offset = stride;
-			stride += 4;
 			a++;
 		}
+		stride += 4;
 
 		// Texture coordinates
 		for(int32 n = 0; n < geo->numTexCoordSets; n++){
@@ -114,15 +116,15 @@ skinInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 		for(a = tmpAttribs; a != &tmpAttribs[header->numAttribs]; a++)
 			a->stride = stride;
 		header->attribDesc = rwNewT(AttribDesc, header->numAttribs, MEMDUR_EVENT | ID_GEOMETRY);
-		memcpy(header->attribDesc, tmpAttribs,
+		memcpy_neon(header->attribDesc, tmpAttribs,
 		       header->numAttribs*sizeof(AttribDesc));
 
 		//
 		// Allocate vertex buffer
 		//
 		header->vertexBuffer = rwNewT(uint8, header->totalNumVertex*stride, MEMDUR_EVENT | ID_GEOMETRY);
-		assert(header->vbo == 0);
-		glGenBuffers(1, &header->vbo);
+		// assert(header->vbo == 0);
+		// glGenBuffers(1, &header->vbo);
 	}
 
 	Skin *skin = Skin::get(geo);
@@ -150,6 +152,11 @@ skinInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 		instV3d(VERT_FLOAT3, verts + a->offset,
 			geo->morphTargets[0].normals,
 			header->totalNumVertex, a->stride);
+	} else if (!hasNormals) {
+		for (int i = 0; i < header->totalNumVertex; i++) {
+			float *verts_f = (float*)&verts[12 + i * 56];
+			verts_f[0] = verts_f[1] = verts_f[2] = 0.0f;
+		}
 	}
 
 	// Prelighting
@@ -159,6 +166,13 @@ skinInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 		instColor(VERT_RGBA, verts + a->offset,
 			  geo->colors,
 			  header->totalNumVertex, a->stride);
+	} else if (!isPrelit) {
+		for (int i = 0; i < header->totalNumVertex; i++) {
+			verts[24 + i * 56] = 0;
+			verts[25 + i * 56] = 0;
+			verts[26 + i * 56] = 0;
+			verts[27 + i * 56] = 255;
+		}
 	}
 
 	// Texture coordinates
@@ -192,17 +206,17 @@ skinInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 			  header->totalNumVertex, a->stride);
 	}
 
-#ifdef RW_GL_USE_VAOS
-	glBindVertexArray(header->vao);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
-#endif
-	glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
-	glBufferData(GL_ARRAY_BUFFER, header->totalNumVertex*attribs[0].stride,
-	             header->vertexBuffer, GL_STATIC_DRAW);
-#ifdef RW_GL_USE_VAOS
-	setAttribPointers(header->attribDesc, header->numAttribs);
-	glBindVertexArray(0);
-#endif
+// #ifdef RW_GL_USE_VAOS
+	// glBindVertexArray(header->vao);
+	// glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
+// #endif
+	// glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
+	// glBufferData(GL_ARRAY_BUFFER, header->totalNumVertex*attribs[0].stride,
+	             // header->vertexBuffer, GL_STATIC_DRAW);
+// #ifdef RW_GL_USE_VAOS
+	// setAttribPointers(header->attribDesc, header->numAttribs);
+	// glBindVertexArray(0);
+// #endif
 }
 
 void
@@ -260,30 +274,32 @@ skinRenderCB(Atomic *atomic, InstanceDataHeader *header)
 	setWorldMatrix(atomic->getFrame()->getLTM());
 	lightingCB(atomic);
 
-#ifdef RW_GL_USE_VAOS
-	glBindVertexArray(header->vao);
-#else
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
-	glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
+// #ifdef RW_GL_USE_VAOS
+	// glBindVertexArray(header->vao);
+// #else
+	// glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
+	// glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
 	setAttribPointers(header->attribDesc, header->numAttribs);
-#endif
+// #endif
 
 	InstanceData *inst = header->inst;
 	int32 n = header->numMeshes;
 
 	skinShader->use();
 
-	uploadSkinMatrices(atomic);
-
 	while(n--){
 		m = inst->material;
-
-		setMaterial(m->color, m->surfaceProps);
-
-		setTexture(0, m->texture);
-
+		
 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
-
+		
+		setTexture(0, m->texture);
+		
+		setMaterial(m->color, m->surfaceProps);
+		
+		flushCache();
+		
+		uploadSkinMatrices(atomic);
+		
 		drawInst(header, inst);
 		inst++;
 	}
@@ -297,11 +313,11 @@ skinOpen(void *o, int32, int32)
 {
 	skinGlobals.pipelines[PLATFORM_GL3] = makeSkinPipeline();
 
-#include "shaders/simple_fs_gl.inc"
-#include "shaders/skin_gl.inc"
-	const char *vs[] = { shaderDecl, header_vert_src, skin_vert_src, nil };
-	const char *fs[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
-	skinShader = Shader::create(vs, fs);
+#include "shaders/simple_fs_gl.h"
+#include "shaders/skin_gl.h"
+	const char *vs[] = { (const char*)skin_v, (const char*)&size_skin_v, nil };
+	const char *fs[] = { (const char*)simple_f, (const char*)&size_simple_f, nil };
+	skinShader = Shader::create(vs, fs, false);
 	assert(skinShader);
 
 	return o;

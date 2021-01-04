@@ -9,9 +9,9 @@
 #include "../rwpipeline.h"
 #include "../rwobjects.h"
 #include "../rwengine.h"
-#ifdef RW_OPENGL
-#include <GL/glew.h>
-#endif
+// #ifdef RW_OPENGL
+// #include <GL/glew.h>
+// #endif
 #include "rwgl3.h"
 #include "rwgl3shader.h"
 
@@ -30,11 +30,11 @@ freeInstanceData(Geometry *geometry)
 		return;
 	InstanceDataHeader *header = (InstanceDataHeader*)geometry->instData;
 	geometry->instData = nil;
-	glDeleteBuffers(1, &header->ibo);
-	glDeleteBuffers(1, &header->vbo);
-#ifdef RW_GL_USE_VAOS
-	glDeleteBuffers(1, &header->vao);
-#endif
+	// glDeleteBuffers(1, &header->ibo);
+	// glDeleteBuffers(1, &header->vbo);
+// #ifdef RW_GL_USE_VAOS
+	// glDeleteBuffers(1, &header->vao);
+// #endif
 	rwFree(header->indexBuffer);
 	rwFree(header->vertexBuffer);
 	rwFree(header->attribDesc);
@@ -76,7 +76,7 @@ instanceMesh(rw::ObjPipeline *rwpipe, Geometry *geo)
 		inst->vertexAlpha = 0;
 		inst->program = 0;
 		inst->offset = offset;
-		memcpy((uint8*)header->indexBuffer + inst->offset,
+		memcpy_neon((uint8*)header->indexBuffer + inst->offset,
 		       mesh->indices, inst->numIndex*2);
 		offset += inst->numIndex*2;
 		mesh++;
@@ -89,14 +89,14 @@ instanceMesh(rw::ObjPipeline *rwpipe, Geometry *geo)
 	header->ibo = 0;
 	header->vbo = 0;
 
-#ifdef RW_GL_USE_VAOS
-	glGenVertexArrays(1, &header->vao);
-	glBindVertexArray(header->vao);
-#endif
-	glGenBuffers(1, &header->ibo);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, header->totalNumIndex*2,
-			header->indexBuffer, GL_STATIC_DRAW);
+// #ifdef RW_GL_USE_VAOS
+	// glGenVertexArrays(1, &header->vao);
+	// glBindVertexArray(header->vao);
+// #endif
+	// glGenBuffers(1, &header->ibo);
+	// glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
+	// glBufferData(GL_ELEMENT_ARRAY_BUFFER, header->totalNumIndex*2,
+			// header->indexBuffer, GL_STATIC_DRAW);
 
 	return header;
 }
@@ -203,9 +203,9 @@ defaultInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 			a->type = GL_FLOAT;
 			a->normalized = GL_FALSE;
 			a->offset = stride;
-			stride += 12;
 			a++;
 		}
+		stride += 12;
 
 		// Prelighting
 		if(isPrelit){
@@ -214,34 +214,37 @@ defaultInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 			a->type = GL_UNSIGNED_BYTE;
 			a->normalized = GL_TRUE;
 			a->offset = stride;
-			stride += 4;
 			a++;
 		}
-
-		// Texture coordinates
-		for(int32 n = 0; n < geo->numTexCoordSets; n++){
-			a->index = ATTRIB_TEXCOORDS0+n;
-			a->size = 2;
-			a->type = GL_FLOAT;
-			a->normalized = GL_FALSE;
-			a->offset = stride;
-			stride += 8;
-			a++;
+		stride += 4;
+		
+		if (geo->numTexCoordSets <= 0) stride += 8;
+		else {
+			// Texture coordinates
+			for(int32 n = 0; n < geo->numTexCoordSets; n++){
+				a->index = ATTRIB_TEXCOORDS0+n;
+				a->size = 2;
+				a->type = GL_FLOAT;
+				a->normalized = GL_FALSE;
+				a->offset = stride;
+				stride += 8;
+				a++;
+			}
 		}
 
 		header->numAttribs = a - tmpAttribs;
 		for(a = tmpAttribs; a != &tmpAttribs[header->numAttribs]; a++)
 			a->stride = stride;
 		header->attribDesc = rwNewT(AttribDesc, header->numAttribs, MEMDUR_EVENT | ID_GEOMETRY);
-		memcpy(header->attribDesc, tmpAttribs,
+		memcpy_neon(header->attribDesc, tmpAttribs,
 		       header->numAttribs*sizeof(AttribDesc));
 
 		//
 		// Allocate vertex buffer
 		//
 		header->vertexBuffer = rwNewT(uint8, header->totalNumVertex*stride, MEMDUR_EVENT | ID_GEOMETRY);
-		assert(header->vbo == 0);
-		glGenBuffers(1, &header->vbo);
+		//assert(header->vbo == 0);
+		//glGenBuffers(1, &header->vbo);
 	}
 
 	attribs = header->attribDesc;
@@ -268,6 +271,11 @@ defaultInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 		instV3d(VERT_FLOAT3, verts + a->offset,
 			geo->morphTargets[0].normals,
 			header->totalNumVertex, a->stride);
+	} else if (!hasNormals) {
+		for (int i = 0; i < header->totalNumVertex; i++) {
+			float *verts_f = (float*)&verts[12 + i * 36];
+			verts_f[0] = verts_f[1] = verts_f[2] = 0;
+		}
 	}
 
 	// Prelighting
@@ -284,6 +292,13 @@ defaultInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 				inst->numVertices, a->stride);
 			inst++;
 		}
+	} else if (!isPrelit) {
+		for (int i = 0; i < header->totalNumVertex; i++) {
+			verts[24 + i * 36] = 0;
+			verts[25 + i * 36] = 0;
+			verts[26 + i * 36] = 0;
+			verts[27 + i * 36] = 255;
+		}
 	}
 
 	// Texture coordinates
@@ -297,17 +312,17 @@ defaultInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 		}
 	}
 
-#ifdef RW_GL_USE_VAOS
-	glBindVertexArray(header->vao);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
-#endif
-	glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
-	glBufferData(GL_ARRAY_BUFFER, header->totalNumVertex*attribs[0].stride,
-	             header->vertexBuffer, GL_STATIC_DRAW);
-#ifdef RW_GL_USE_VAOS
-	setAttribPointers(header->attribDesc, header->numAttribs);
-	glBindVertexArray(0);
-#endif
+// #ifdef RW_GL_USE_VAOS
+	// glBindVertexArray(header->vao);
+	// glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
+// #endif
+	// glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
+	// glBufferData(GL_ARRAY_BUFFER, header->totalNumVertex*attribs[0].stride,
+	             // header->vertexBuffer, GL_STATIC_DRAW);
+// #ifdef RW_GL_USE_VAOS
+	// setAttribPointers(header->attribDesc, header->numAttribs);
+	// glBindVertexArray(0);
+// #endif
 }
 
 void

@@ -1,27 +1,47 @@
-uniform mat4 u_texMatrix;
-
-VSIN(ATTRIB_POS)	vec3 in_pos;
-
-VSOUT vec4 v_color;
-VSOUT vec2 v_tex0;
-VSOUT vec2 v_tex1;
-VSOUT float v_fog;
-
-void
-main(void)
-{
-	vec4 Vertex = u_world * vec4(in_pos, 1.0);
-	gl_Position = u_proj * u_view * Vertex;
-	vec3 Normal = mat3(u_world) * in_normal;
+void main(
+	float3 in_pos,
+	float3 in_normal,
+	fixed4 in_color,
+	half2 in_tex0,
+	uniform float4x4 u_wvp,
+	uniform float4x4 u_world,
+	uniform float4x4 u_texMatrix,
+	uniform half4 u_ambLight,
+	uniform half4 u_surfProps,
+	uniform half4 u_fogData,
+	uniform half4 u_matColor,
+	uniform half4 u_lightParams[MAX_LIGHTS],
+	uniform half4 u_lightDirection[MAX_LIGHTS],
+	uniform half4 u_lightColor[MAX_LIGHTS],
+	half4 out v_color : COLOR0,
+	half2 out v_tex0 : TEXCOORD0,
+	half2 out v_tex1 : TEXCOORD1,
+	fixed out v_fog : FOG,
+	float4 out gl_Position : POSITION
+) {
+	gl_Position = mul(float4(in_pos, 1.0), u_wvp);
+	float3 Normal = mul(in_normal, float3x3(u_world));
 
 	v_tex0 = in_tex0;
-	v_tex1 = (u_texMatrix * vec4(Normal, 1.0)).xy;
+	v_tex1 = (mul(float4(Normal, 1.0), u_texMatrix)).xy;
 
 	v_color = in_color;
 	v_color.rgb += u_ambLight.rgb*surfAmbient;
-	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
+	
+	half3 color = float3(0.0, 0.0, 0.0);
+	for(int i = 0; i < MAX_LIGHTS; i++){
+		if(u_lightParams[i].x == 0.0)
+			break;
+		if(u_lightParams[i].x == 1.0){
+			// direct
+			fixed l = max(0.0, dot(Normal, -u_lightDirection[i].xyz));
+			color += l*u_lightColor[i].rgb;
+		}
+	}
+	
+	v_color.rgb += color*surfDiffuse;
 	v_color = clamp(v_color, 0.0, 1.0);
 	v_color *= u_matColor;
 
-	v_fog = DoFog(gl_Position.w);
+	v_fog = DoFog(gl_Position.w, u_fogData);
 }

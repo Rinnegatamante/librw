@@ -10,7 +10,7 @@
 #include "../rwpipeline.h"
 #include "../rwobjects.h"
 #ifdef RW_OPENGL
-#include <GL/glew.h>
+// #include <GL/glew.h>
 #include "rwgl3.h"
 #include "rwgl3shader.h"
 
@@ -24,9 +24,9 @@ namespace gl3 {
 void
 drawInst_simple(InstanceDataHeader *header, InstanceData *inst)
 {
-	flushCache();
-	glDrawElements(header->primType, inst->numIndex,
-	               GL_UNSIGNED_SHORT, (void*)(uintptr)inst->offset);
+	vglIndexPointerMapped((uint8_t*)header->indexBuffer + inst->offset);
+	vglVertexAttribPointerMapped(0, header->vertexBuffer);
+	vglDrawObjects(header->primType, inst->numIndex, GL_FALSE);
 }
 
 // Emulate PS2 GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
@@ -65,9 +65,11 @@ drawInst_GSemu(InstanceDataHeader *header, InstanceData *inst)
 void
 drawInst(InstanceDataHeader *header, InstanceData *inst)
 {
+#ifndef PSP2
 	if(rw::GetRenderState(rw::GSALPHATEST))
 		drawInst_GSemu(header, inst);
 	else
+#endif
 		drawInst_simple(header, inst);
 }
 
@@ -75,20 +77,15 @@ drawInst(InstanceDataHeader *header, InstanceData *inst)
 void
 setAttribPointers(AttribDesc *attribDescs, int32 numAttribs)
 {
-	AttribDesc *a;
-	for(a = attribDescs; a != &attribDescs[numAttribs]; a++){
-		glEnableVertexAttribArray(a->index);
-		glVertexAttribPointer(a->index, a->size, a->type, a->normalized,
-		                      a->stride, (void*)(uint64)a->offset);
-	}
+	//vglVertexAttribPointerMapped(0, gVertexBuffer);
 }
 
 void
 disableAttribPointers(AttribDesc *attribDescs, int32 numAttribs)
 {
-	AttribDesc *a;
+	/*AttribDesc *a;
 	for(a = attribDescs; a != &attribDescs[numAttribs]; a++)
-		glDisableVertexAttribArray(a->index);
+		glDisableVertexAttribArray(a->index);*/
 }
 
 int32
@@ -126,13 +123,13 @@ defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
 	setWorldMatrix(atomic->getFrame()->getLTM());
 	lightingCB(atomic);
 
-#ifdef RW_GL_USE_VAOS
-	glBindVertexArray(header->vao);
-#else
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
-	glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
+// #ifdef RW_GL_USE_VAOS
+	// glBindVertexArray(header->vao);
+// #else
+	// glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
+	// glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
 	setAttribPointers(header->attribDesc, header->numAttribs);
-#endif
+// #endif
 
 	InstanceData *inst = header->inst;
 	int32 n = header->numMeshes;
@@ -142,11 +139,13 @@ defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
 	while(n--){
 		m = inst->material;
 
-		setMaterial(m->color, m->surfaceProps);
-
-		setTexture(0, m->texture);
-
 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+		
+		setTexture(0, m->texture);
+		
+		setMaterial(m->color, m->surfaceProps);
+		
+		flushCache();
 
 		drawInst(header, inst);
 		inst++;

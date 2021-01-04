@@ -12,14 +12,16 @@
 #include "../rwobjects.h"
 #include "../rwanim.h"
 #include "../rwplugins.h"
-#ifdef RW_OPENGL
-#include <GL/glew.h>
-#endif
+// #ifdef RW_OPENGL
+// #include <GL/glew.h>
+// #endif
 #include "rwgl3.h"
 #include "rwgl3shader.h"
 #include "rwgl3plg.h"
 
 #include "rwgl3impl.h"
+
+#include "psp2_shaders.h"
 
 namespace rw {
 namespace gl3 {
@@ -40,12 +42,14 @@ matfxDefaultRender(InstanceDataHeader *header, InstanceData *inst)
 	m = inst->material;
 
 	defaultShader->use();
-
-	setMaterial(m->color, m->surfaceProps);
-
-	setTexture(0, m->texture);
-
+	
 	rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+	
+	setTexture(0, m->texture);
+	
+	setMaterial(m->color, m->surfaceProps);
+	
+	flushCache();
 
 	drawInst(header, inst);
 }
@@ -92,12 +96,18 @@ matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, MatFX::Env *env)
 	}
 
 	envShader->use();
-
+	
+	rw::SetRenderState(VERTEXALPHA, 1);
+	rw::SetRenderState(SRCBLEND, BLENDONE);
+	
 	setTexture(0, m->texture);
 	setTexture(1, env->tex);
-	uploadEnvMatrix(env->frame);
-
+	
 	setMaterial(m->color, m->surfaceProps);
+	
+	flushCache();
+
+	uploadEnvMatrix(env->frame);
 
 	float fxparams[2];
 	fxparams[0] = env->coefficient;
@@ -112,9 +122,6 @@ matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, MatFX::Env *env)
 	else
 		glUniform4fv(U(u_colorClamp), 1, one);
 
-	rw::SetRenderState(VERTEXALPHA, 1);
-	rw::SetRenderState(SRCBLEND, BLENDONE);
-
 	drawInst(header, inst);
 
 	rw::SetRenderState(SRCBLEND, BLENDSRCALPHA);
@@ -127,10 +134,10 @@ matfxRenderCB(Atomic *atomic, InstanceDataHeader *header)
 	lightingCB(atomic);
 
 #ifdef RW_GL_USE_VAOS
-	glBindVertexArray(header->vao);
+	// glBindVertexArray(header->vao);
 #else
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
-	glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
+	// glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, header->ibo);
+	// glBindBuffer(GL_ARRAY_BUFFER, header->vbo);
 	setAttribPointers(header->attribDesc, header->numAttribs);
 #endif
 
@@ -176,10 +183,11 @@ matfxOpen(void *o, int32, int32)
 {
 	matFXGlobals.pipelines[PLATFORM_GL3] = makeMatFXPipeline();
 
-#include "shaders/matfx_gl.inc"
-	const char *vs[] = { shaderDecl, header_vert_src, matfx_env_vert_src, nil };
-	const char *fs[] = { shaderDecl, header_frag_src, matfx_env_frag_src, nil };
-	envShader = Shader::create(vs, fs);
+#include "shaders/matfx_fs_gl.h"
+#include "shaders/matfx_vs_gl.h"
+	const char *vs[] = { (const char*)matfx_env_v, (const char*)&size_matfx_env_v, nil };
+	const char *fs[] = { (const char*)matfx_env_f, (const char*)&size_matfx_env_f, nil };
+	envShader = Shader::create(vs, fs, false);
 	assert(envShader);
 
 	return o;

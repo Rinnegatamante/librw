@@ -14,7 +14,7 @@
 #include <float.h>          // FLT_MAX
 #include <stdarg.h>         // va_list
 #include <stddef.h>         // ptrdiff_t, NULL
-#include <string.h>         // memset, memmove, memcpy, strlen, strchr, strcpy, strcmp
+#include <string.h>         // memset, memmove, memcpy_neon, strlen, strchr, strcpy, strcmp
 
 #define IMGUI_VERSION       "1.54 WIP"
 
@@ -1051,7 +1051,7 @@ public:
             return;
         T* new_data = (value_type*)ImGui::MemAlloc((size_t)new_capacity * sizeof(T));
         if (Data)
-            memcpy(new_data, Data, (size_t)Size * sizeof(T));
+            memcpy_neon(new_data, Data, (size_t)Size * sizeof(T));
         ImGui::MemFree(Data);
         Data = new_data;
         Capacity = new_capacity;

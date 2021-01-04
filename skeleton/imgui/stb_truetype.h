@@ -432,7 +432,7 @@ int main(int arg, char **argv)
 
    #ifndef STBTT_memcpy
    #include <memory.h>
-   #define STBTT_memcpy       memcpy
+   #define STBTT_memcpy       memcpy_neon
    #define STBTT_memset       memset
    #endif
 #endif

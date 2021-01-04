@@ -1,32 +1,55 @@
-uniform mat4 u_boneMatrices[64];
-
-VSIN(ATTRIB_POS)	vec3 in_pos;
-
-VSOUT vec4 v_color;
-VSOUT vec2 v_tex0;
-VSOUT float v_fog;
-
-void
-main(void)
-{
-	vec3 SkinVertex = vec3(0.0, 0.0, 0.0);
-	vec3 SkinNormal = vec3(0.0, 0.0, 0.0);
-	for(int i = 0; i < 4; i++){
-		SkinVertex += (u_boneMatrices[int(in_indices[i])] * vec4(in_pos, 1.0)).xyz * in_weights[i];
-		SkinNormal += (mat3(u_boneMatrices[int(in_indices[i])]) * in_normal) * in_weights[i];
-	}
-
-	vec4 Vertex = u_world * vec4(SkinVertex, 1.0);
-	gl_Position = u_proj * u_view * Vertex;
-	vec3 Normal = mat3(u_world) * SkinNormal;
+void main(
+	float3 in_pos,
+	float3 in_normal,
+	fixed4 in_color,
+	half2 in_tex0,
+	float4 in_weights,
+	float4 in_indices,
+	uniform float4x4 u_wvp,
+	uniform float4x4 u_world,
+	uniform half4 u_ambLight,
+	uniform half4 u_surfProps,
+	uniform half4 u_fogData,
+	uniform half4 u_matColor,
+	uniform half4 u_lightParams[MAX_LIGHTS],
+	uniform half4 u_lightDirection[MAX_LIGHTS],
+	uniform half4 u_lightColor[MAX_LIGHTS],
+	uniform float4x4 u_boneMatrices[64],
+	half4 out v_color : COLOR0,
+	half2 out v_tex0 : TEXCOORD0,
+	fixed out v_fog : FOG,
+	float4 out gl_Position : POSITION
+) {
+	float4x4 Skin = u_boneMatrices[(int)(in_indices.x * 255)] * in_weights.x
+		+ u_boneMatrices[(int)(in_indices.y * 255)] * in_weights.y
+		+ u_boneMatrices[(int)(in_indices.z * 255)] * in_weights.z
+		+ u_boneMatrices[(int)(in_indices.w * 255)] * in_weights.w;
+		
+	float3 SkinVertex = (mul(float4(in_pos, 1.f), Skin)).xyz;
+	float3 SkinNormal = (mul(float4(in_normal, 0.f), Skin)).xyz;
+	
+	gl_Position = mul(float4(SkinVertex, 1.0), u_wvp);
+	float3 Normal = mul(SkinNormal, float3x3(u_world));
 
 	v_tex0 = in_tex0;
 
 	v_color = in_color;
 	v_color.rgb += u_ambLight.rgb*surfAmbient;
-	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
+	
+	half3 color = half3(0.0, 0.0, 0.0);
+	for(int i = 0; i < MAX_LIGHTS; i++){
+		if(u_lightParams[i].x == 0.0)
+			break;
+		if(u_lightParams[i].x == 1.0){
+			// direct
+			fixed l = max(0.0, dot(Normal, -u_lightDirection[i].xyz));
+			color += l*u_lightColor[i].rgb;
+		}
+	}
+	
+	v_color.rgb += color*surfDiffuse;
 	v_color = clamp(v_color, 0.0, 1.0);
 	v_color *= u_matColor;
 
-	v_fog = DoFog(gl_Position.z);
+	v_fog = DoFog(gl_Position.z, u_fogData);
 }
