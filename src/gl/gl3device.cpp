@@ -518,10 +518,10 @@ bindTexture(uint32 texid)
 void
 bindFramebuffer(uint32 fbo)
 {
-	if(currentFramebuffer != fbo){
-		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	//if(currentFramebuffer != fbo){
+		//glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 		currentFramebuffer = fbo;
-	}
+	//}
 }
 
 static GLint filterConvMap_NoMIP[] = {
@@ -1254,7 +1254,7 @@ setFrameBuffer(Camera *cam)
 	assert(fbuf);
 
 	Gl3Raster *natfb = PLUGINOFFSET(Gl3Raster, fbuf, nativeRasterOffset);
-	Gl3Raster *natzb = PLUGINOFFSET(Gl3Raster, zbuf, nativeRasterOffset);
+	//Gl3Raster *natzb = PLUGINOFFSET(Gl3Raster, zbuf, nativeRasterOffset);
 	assert(fbuf->type == Raster::CAMERA || fbuf->type == Raster::CAMERATEXTURE);
 
 	// Have to make sure depth buffer is attached to FB's fbo
@@ -1401,7 +1401,7 @@ beginUpdate(Camera *cam)
 		w = cam->frameBuffer->width;
 		h = cam->frameBuffer->height;
 	}
-
+	
 	if(w != glGlobals.presentWidth || h != glGlobals.presentHeight ||
 	   x != glGlobals.presentOffX || y != glGlobals.presentOffY){
 		glViewport(x, y, w, h);
@@ -1660,7 +1660,7 @@ openGLFW(EngineOpenParams *openparams)
 #else
 	vglEnableRuntimeShaderCompiler(GL_FALSE);
 #endif
-	vglInitExtended(0x10000, 960, 544, 0x100000, SCE_GXM_MULTISAMPLE_4X);
+	vglInitExtended(0x10000, 960, 544, 0x800000, SCE_GXM_MULTISAMPLE_4X);
 	vglUseVram(GL_TRUE);
 #ifdef MIAMI_SUPPORT
 	vglStartRendering();

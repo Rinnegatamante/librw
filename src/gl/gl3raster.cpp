@@ -163,13 +163,13 @@ rasterCreateCameraTexture(Raster *raster)
 	}
 
 	// i don't remember why this was once here...
-	if(gl3Caps.gles){
+//	if(gl3Caps.gles){
 		// glReadPixels only supports GL_RGBA
 //		natras->internalFormat = GL_RGBA;
 //		natras->format = GL_RGBA;
 //		natras->type = GL_UNSIGNED_BYTE;
 //		natras->bpp = 4;
-	}
+//	}
 
 	raster->stride = raster->width*natras->bpp;
 
@@ -187,10 +187,10 @@ rasterCreateCameraTexture(Raster *raster)
 	bindTexture(prev);
 
 
-	glGenFramebuffers(1, &natras->fbo);
-	bindFramebuffer(natras->fbo);
-	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, natras->texid, 0);
-	bindFramebuffer(0);
+	//glGenFramebuffers(1, &natras->fbo);
+	//glBindFramebuffer(GL_FRAMEBUFFER, natras->fbo);
+	//glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, natras->texid, 0);
+	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	natras->fboMate = nil;
 
 	return raster;
@@ -331,7 +331,7 @@ ret:
 	return ret;
 }
 
-#define ALIGN(x, a) (((x) + ((a)-1)) & ~((a)-1))
+#define MEM_ALIGN(x, a) (((x) + ((a)-1)) & ~((a)-1))
 
 uint8*
 rasterLock(Raster *raster, int32 level, int32 lockMode)
@@ -356,7 +356,7 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 			int y = 0;
 			uint8_t *p = (uint8_t*)vglGetTexDataPointer(GL_TEXTURE_2D);
 #ifdef PSP2_NO_DXT_TEXTURES
-			uint32_t internal_stride = ALIGN(raster->width, 8) * natras->bpp;
+			uint32_t internal_stride = MEM_ALIGN(raster->width, 8) * natras->bpp;
 			while (y < raster->height) {
 				memcpy_neon(px, p, raster->stride);
 				p += internal_stride;
@@ -364,7 +364,7 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 			}		
 #else
 			if (raster->width < 4 || raster->height < 4) {
-				uint32_t internal_stride = ALIGN(raster->width, 8) * natras->bpp;
+				uint32_t internal_stride = MEM_ALIGN(raster->width, 8) * natras->bpp;
 				while (y < raster->height) {
 					memcpy_neon(px, p, raster->stride);
 					p += internal_stride;

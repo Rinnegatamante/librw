@@ -11,7 +11,7 @@ CC      = $(PREFIX)-gcc
 CXX		= $(PREFIX)-g++
 AR      = $(PREFIX)-gcc-ar
 CFLAGS  = -g -Wl,-q,--no-enum-size-warning -fno-short-enums -O3 -fsingle-precision-constant -mfloat-abi=hard -ffast-math \
-	-DPSP2 -DNDEBUG -DRW_GL3 -DLIBRW_GLAD -DMIAMI_SUPPORT
+	-DPSP2 -DNDEBUG -DRW_GL3 -DLIBRW_GLAD
 CXXFLAGS = $(CFLAGS)
 ASFLAGS = $(CFLAGS)
 
