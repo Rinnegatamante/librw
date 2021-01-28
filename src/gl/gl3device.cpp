@@ -1366,9 +1366,7 @@ beginUpdate(Camera *cam)
 	}
 
 	setFrameBuffer(cam);
-#ifndef MIAMI_SUPPORT
-	vglStartRendering();
-#endif
+
 	ImIdx = (ImIdx + 1) % 2;
 	gVertexBufferIm2D = gVertexBufferIm2DPtr[ImIdx];
 	gVertexBufferIm3D = gVertexBufferIm3DPtr[ImIdx];
@@ -1415,9 +1413,6 @@ beginUpdate(Camera *cam)
 static void
 endUpdate(Camera *cam)
 {
-#ifndef MIAMI_SUPPORT
-	vglStopRendering();
-#endif
 }
 
 static void
@@ -1457,10 +1452,7 @@ showRaster(Raster *raster, uint32 flags)
 		// glfwSwapInterval(0);
 	// glfwSwapBuffers(glGlobals.window);
 #endif
-#ifdef MIAMI_SUPPORT
-	vglStopRendering();
-	vglStartRendering();
-#endif
+	vglSwapBuffers(GL_FALSE);
 }
 
 static bool32
@@ -1660,11 +1652,8 @@ openGLFW(EngineOpenParams *openparams)
 #else
 	vglEnableRuntimeShaderCompiler(GL_FALSE);
 #endif
-	vglInitExtended(0x10000, 960, 544, 0x800000, SCE_GXM_MULTISAMPLE_4X);
+	vglInitExtended(960, 544, 0x800000, SCE_GXM_MULTISAMPLE_4X);
 	vglUseVram(GL_TRUE);
-#ifdef MIAMI_SUPPORT
-	vglStartRendering();
-#endif
 
 	/* Init GLFW */
 	// if(!glfwInit()){
