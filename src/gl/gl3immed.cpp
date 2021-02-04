@@ -150,7 +150,7 @@ im2DRenderPrimitive(PrimitiveType primType, void *vertices, int32 numVertices)
 	flushCache();
 	glUniform4fv(currentShader->uniformLocations[u_xform], 1, xform);
 	
-	memcpy_neon(gVertexBufferIm2D, vertices, numVertices*sizeof(Im2DVertex));
+	sceClibMemcpy(gVertexBufferIm2D, vertices, numVertices*sizeof(Im2DVertex));
 	vglVertexAttribPointerMapped(0, gVertexBufferIm2D);
 	vglIndexPointerMapped(gConstIndices);
 	gVertexBufferIm2D += numVertices*(sizeof(Im2DVertex)/sizeof(float));
@@ -199,11 +199,11 @@ im2DRenderIndexedPrimitive(PrimitiveType primType,
 	flushCache();
 	glUniform4fv(currentShader->uniformLocations[u_xform], 1, xform);
 	
-	memcpy_neon(gIndicesIm2D, indices, numIndices * 2);
+	sceClibMemcpy(gIndicesIm2D, indices, numIndices * 2);
 	vglIndexPointerMapped(gIndicesIm2D);
 	gIndicesIm2D += numIndices;
 	
-	memcpy_neon(gVertexBufferIm2D, vertices, numVertices*sizeof(Im2DVertex));
+	sceClibMemcpy(gVertexBufferIm2D, vertices, numVertices*sizeof(Im2DVertex));
 	vglVertexAttribPointerMapped(0, gVertexBufferIm2D);
 	gVertexBufferIm2D += numVertices*(sizeof(Im2DVertex)/sizeof(float));
 		
@@ -284,7 +284,7 @@ im3DTransform(void *vertices, int32 numVertices, Matrix *world, uint32 flags)
 	if((flags & im3d::VERTEXUV) == 0)
 		SetRenderStatePtr(TEXTURERASTER, nil);
 
-	memcpy_neon(gVertexBufferIm3D, vertices, numVertices*sizeof(Im3DVertex));
+	sceClibMemcpy(gVertexBufferIm3D, vertices, numVertices*sizeof(Im3DVertex));
 // #ifdef RW_GL_USE_VAOS
 	// glBindVertexArray(im2DVao);
 // #endif
@@ -312,7 +312,7 @@ void
 im3DRenderIndexedPrimitive(PrimitiveType primType, void *indices, int32 numIndices)
 {
 	flushCache();
-	memcpy_neon(gIndicesIm3D, indices, numIndices * 2);
+	sceClibMemcpy(gIndicesIm3D, indices, numIndices * 2);
 	vglIndexPointerMapped(gIndicesIm3D);
 	vglVertexAttribPointerMapped(0, gVertexBufferIm3D);
 	gVertexBufferIm3D += num3DVertices*(sizeof(Im3DVertex)/sizeof(float));

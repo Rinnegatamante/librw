@@ -116,7 +116,7 @@ skinInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 		for(a = tmpAttribs; a != &tmpAttribs[header->numAttribs]; a++)
 			a->stride = stride;
 		header->attribDesc = rwNewT(AttribDesc, header->numAttribs, MEMDUR_EVENT | ID_GEOMETRY);
-		memcpy_neon(header->attribDesc, tmpAttribs,
+		sceClibMemcpy(header->attribDesc, tmpAttribs,
 		       header->numAttribs*sizeof(AttribDesc));
 
 		//

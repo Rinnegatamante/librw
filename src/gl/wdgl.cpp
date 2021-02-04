@@ -135,7 +135,7 @@ packattrib(uint8 *dst, float32 *src, AttribDesc *a, float32 scale=1.0f)
 
 	switch(a->type){
 	case 0:	// float
-		memcpy_neon(dst, src, a->size*4);
+		sceClibMemcpy(dst, src, a->size*4);
 		break;
 
 	// TODO: maybe have loop inside if?
@@ -189,7 +189,7 @@ unpackattrib(float *dst, uint8 *src, AttribDesc *a, float32 scale=1.0f)
 
 	switch(a->type){
 	case 0:	// float
-		memcpy_neon(dst, src, a->size*4);
+		sceClibMemcpy(dst, src, a->size*4);
 		break;
 
 	// TODO: maybe have loop inside if?
@@ -656,7 +656,7 @@ skinUninstanceCB(Geometry *geo)
 	uint8 *data = skin->data;
 	float *invMats = skin->inverseMatrices;
 	skin->init(skin->numBones, skin->numBones, geo->numVertices);
-	memcpy_neon(skin->inverseMatrices, invMats, skin->numBones*64);
+	sceClibMemcpy(skin->inverseMatrices, invMats, skin->numBones*64);
 	rwFree(data);
 
 	uint8 *p;

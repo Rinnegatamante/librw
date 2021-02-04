@@ -92,11 +92,11 @@ copyUserData(void *dst, void *src, int32 offset, int32)
 		switch(srca->datatype){
 		case USERDATAINT:
 			dsta->data = (int32*)udMalloc(sizeof(int32)*dsta->numElements);
-			memcpy_neon(dsta->data, srca->data, sizeof(int32)*dsta->numElements);
+			sceClibMemcpy(dsta->data, srca->data, sizeof(int32)*dsta->numElements);
 			break;
 		case USERDATAFLOAT:
 			dsta->data = (float32*)udMalloc(sizeof(float32)*dsta->numElements);
-			memcpy_neon(dsta->data, srca->data, sizeof(float32)*dsta->numElements);
+			sceClibMemcpy(dsta->data, srca->data, sizeof(float32)*dsta->numElements);
 			break;
 		case USERDATASTRING:
 			dststrar = (char**)udMalloc(sizeof(char*)*dsta->numElements);
@@ -243,7 +243,7 @@ UserDataExtension::add(const char *name, int32 datatype, int32 numElements)
 	a = (UserDataArray*)udMalloc((this->numArrays+1)*sizeof(UserDataArray));
 	if(a == nil)
 		return -1;
-	memcpy_neon(a, this->arrays, this->numArrays*sizeof(UserDataArray));
+	sceClibMemcpy(a, this->arrays, this->numArrays*sizeof(UserDataArray));
 	rwFree(this->arrays);
 	this->arrays = a;
 	i = this->numArrays++;

@@ -611,7 +611,7 @@ printSmesh(&smesh);
 		md[i].numIndices = ms[i].numIndices;
 		md[i].indices = indices;
 		indices += md[i].numIndices;
-		memcpy_neon(md[i].indices, ms[i].indices, md[i].numIndices*sizeof(uint16));
+		sceClibMemcpy(md[i].indices, ms[i].indices, md[i].numIndices*sizeof(uint16));
 		rwFree(ms[i].indices);
 	}
 	rwFree(header);

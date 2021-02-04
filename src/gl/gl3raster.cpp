@@ -358,7 +358,7 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 #ifdef PSP2_NO_DXT_TEXTURES
 			uint32_t internal_stride = MEM_ALIGN(raster->width, 8) * natras->bpp;
 			while (y < raster->height) {
-				memcpy_neon(px, p, raster->stride);
+				sceClibMemcpy(px, p, raster->stride);
 				p += internal_stride;
 				y++;
 			}		
@@ -366,11 +366,11 @@ rasterLock(Raster *raster, int32 level, int32 lockMode)
 			if (raster->width < 4 || raster->height < 4) {
 				uint32_t internal_stride = MEM_ALIGN(raster->width, 8) * natras->bpp;
 				while (y < raster->height) {
-					memcpy_neon(px, p, raster->stride);
+					sceClibMemcpy(px, p, raster->stride);
 					p += internal_stride;
 					y++;
 				}	
-			} else memcpy_neon(px, p, natras->hasAlpha ? (raster->width * raster->height) : (raster->width * raster->height / 2));
+			} else sceClibMemcpy(px, p, natras->hasAlpha ? (raster->width * raster->height) : (raster->width * raster->height / 2));
 #endif
 			bindTexture(prev);
 		}
@@ -401,7 +401,7 @@ rasterUnlock(Raster *raster, int32 level)
 		uint32 prev = bindTexture(natras->texid);
 		if (raster->privateFlags & Raster::LOCKRAW) {
 			void *p = vglGetTexDataPointer(GL_TEXTURE_2D);
-			memcpy_neon(p, raster->pixels, natras->hasAlpha ? (raster->width * raster->height) : (raster->width * raster->height / 2));
+			sceClibMemcpy(p, raster->pixels, natras->hasAlpha ? (raster->width * raster->height) : (raster->width * raster->height / 2));
 		} else {	
 			glTexImage2D(GL_TEXTURE_2D, level, natras->internalFormat,
 					raster->width, raster->height,

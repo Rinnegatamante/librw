@@ -76,7 +76,7 @@ instanceMesh(rw::ObjPipeline *rwpipe, Geometry *geo)
 		inst->vertexAlpha = 0;
 		inst->program = 0;
 		inst->offset = offset;
-		memcpy_neon((uint8*)header->indexBuffer + inst->offset,
+		sceClibMemcpy((uint8*)header->indexBuffer + inst->offset,
 		       mesh->indices, inst->numIndex*2);
 		offset += inst->numIndex*2;
 		mesh++;
@@ -236,7 +236,7 @@ defaultInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance)
 		for(a = tmpAttribs; a != &tmpAttribs[header->numAttribs]; a++)
 			a->stride = stride;
 		header->attribDesc = rwNewT(AttribDesc, header->numAttribs, MEMDUR_EVENT | ID_GEOMETRY);
-		memcpy_neon(header->attribDesc, tmpAttribs,
+		sceClibMemcpy(header->attribDesc, tmpAttribs,
 		       header->numAttribs*sizeof(AttribDesc));
 
 		//

@@ -402,7 +402,7 @@ flipAlphaBlock5(uint8 *dst, uint8 *src)
 		flipbits |= bits & 0xFFF;
 		bits >>= 12;
 	}
-	memcpy_neon(dst+2, &flipbits, 6);
+	sceClibMemcpy(dst+2, &flipbits, 6);
 }
 
 // flip top 2 rows of a DXT5 3-bit alpha block
@@ -417,7 +417,7 @@ flipAlphaBlock5_half(uint8 *dst, uint8 *src)
 	uint64 flipbits = bits & 0xFFFFFF000000;
 	flipbits |= (bits>>12) & 0xFFF;
 	flipbits |= (bits<<12) & 0xFFF000;
-	memcpy_neon(dst+2, &flipbits, 6);
+	sceClibMemcpy(dst+2, &flipbits, 6);
 }
 
 void
@@ -438,7 +438,7 @@ flipDXT1(uint8 *dst, uint8 *src, uint32 width, uint32 height)
 				d += 8;
 			}
 		}else
-			memcpy_neon(dst, src, 8*bw);
+			sceClibMemcpy(dst, src, 8*bw);
 		return;
 	}
 	dst += 8*bw*bh;
@@ -474,7 +474,7 @@ flipDXT3(uint8 *dst, uint8 *src, uint32 width, uint32 height)
 				d += 16;
 			}
 		}else
-			memcpy_neon(dst, src, 16*bw);
+			sceClibMemcpy(dst, src, 16*bw);
 		return;
 	}
 	dst += 16*bw*bh;
@@ -511,7 +511,7 @@ flipDXT5(uint8 *dst, uint8 *src, uint32 width, uint32 height)
 				d += 16;
 			}
 		}else
-			memcpy_neon(dst, src, 16*bw);
+			sceClibMemcpy(dst, src, 16*bw);
 		return;
 	}
 	dst += 16*bw*bh;
@@ -698,7 +698,7 @@ Image::palettize(int32 depth)
 	this->palette = nil;
 	this->setPixels(newpixels);
 	this->allocate();
-	memcpy_neon(this->palette, colors, 4*(1<<depth));
+	sceClibMemcpy(this->palette, colors, 4*(1<<depth));
 
 	quant.destroy();
 }
@@ -903,7 +903,7 @@ rwstrdup(const char *s)
 	size_t len = strlen(s)+1;
 	t = (char*)rwMalloc(len, MEMDUR_EVENT);
 	if(t)
-		memcpy_neon(t, s, len);
+		sceClibMemcpy(t, s, len);
 	return t;
 }
 

@@ -72,7 +72,7 @@ instV4d(int type, uint8 *dst, V4d *src, uint32 numVertices, uint32 stride)
 {
 	if(type == VERT_FLOAT4)
 		for(uint32 i = 0; i < numVertices; i++){
-			memcpy_neon(dst, src, 16);
+			sceClibMemcpy(dst, src, 16);
 			dst += stride;
 			src++;
 		}
@@ -85,7 +85,7 @@ instV3d(int type, uint8 *dst, V3d *src, uint32 numVertices, uint32 stride)
 {
 	if(type == VERT_FLOAT3)
 		for(uint32 i = 0; i < numVertices; i++){
-			memcpy_neon(dst, src, 12);
+			sceClibMemcpy(dst, src, 12);
 			dst += stride;
 			src++;
 		}
@@ -107,7 +107,7 @@ uninstV3d(int type, V3d *dst, uint8 *src, uint32 numVertices, uint32 stride)
 {
 	if(type == VERT_FLOAT3)
 		for(uint32 i = 0; i < numVertices; i++){
-			memcpy_neon(dst, src, 12);
+			sceClibMemcpy(dst, src, 12);
 			src += stride;
 			dst++;
 		}
@@ -137,7 +137,7 @@ instTexCoords(int type, uint8 *dst, TexCoords *src, uint32 numVertices, uint32 s
 {
 	assert(type == VERT_FLOAT2);
 	for(uint32 i = 0; i < numVertices; i++){
-		memcpy_neon(dst, src, 8);
+		sceClibMemcpy(dst, src, 8);
 		dst += stride;
 		src++;
 	}
@@ -148,7 +148,7 @@ uninstTexCoords(int type, TexCoords *dst, uint8 *src, uint32 numVertices, uint32
 {
 	assert(type == VERT_FLOAT2);
 	for(uint32 i = 0; i < numVertices; i++){
-		memcpy_neon(dst, src, 8);
+		sceClibMemcpy(dst, src, 8);
 		src += stride;
 		dst++;
 	}
